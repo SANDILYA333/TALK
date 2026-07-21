@@ -11,6 +11,7 @@ import User from "./models/user.model.js"
 import { connectDB } from "./lib/db.js"
 import job from "./lib/cron.js";
 import {clerkMiddleware} from "@clerk/express"
+import clerkWebhook from "./webhooks/clerk.webhooks.js";
 
 const app =express()
 const PORT = process.env.PORT
@@ -18,11 +19,16 @@ const FRONTEND_URL= process.env.FRONTEND_URL;
 
 const publicDir=path.join(process.cwd(),"public");
 
+
+app.use("/api/webhooks/clerk",express.raw({type: " application/json "}),clerkWebhook);
+
+
+
 app.use(express.json()) //parse the client side message
-
 app.use(cors({origin:FRONTEND_URL,credentials:true}))
-
 app.use(clerkMiddleware())
+
+
 
 app.get("/health",(req,res)=>{
     res.status(200).json({ok:true})
