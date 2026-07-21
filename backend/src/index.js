@@ -3,7 +3,7 @@ import express from "express"
 import cors from "cors";
 
 import "dotenv/config"
-import fd from "fs"
+import fs from "fs"
 import path from "path"
 
 import User from "./models/user.model.js"
@@ -32,7 +32,7 @@ if(fs.existSync(publicDir)){
     app.use(express.static(publicDir));
 
     app.get("/{*any}",(req,res,next)=>{
-        res.sendFile(path,join(publicDir,"index.html"),(err)=>next(err));
+        res.sendFile(path.join(publicDir,"index.html"),(err)=>next(err));
     });
 }
 
