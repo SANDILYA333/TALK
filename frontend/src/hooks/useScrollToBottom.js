@@ -1,4 +1,20 @@
+import { useEffect, useRef } from "react";
 import { useSyncExternalStore } from "react";
+
+/**
+ * Custom hook to auto-scroll to bottom when new messages arrive
+ */
+export default function useScrollToBottom(conversationId, lastMessageId) {
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (ref.current) {
+      ref.current.scrollTop = ref.current.scrollHeight;
+    }
+  }, [conversationId, lastMessageId]);
+
+  return ref;
+}
 
 /**
  * Subscribes to a CSS media query
