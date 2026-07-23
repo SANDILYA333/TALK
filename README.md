@@ -1,4 +1,4 @@
-# 💬 Real-Time Chat Application
+# 💬 TALK
 
 A modern, full-stack real-time chat application built with the MERN ecosystem and Socket.io. It provides instant messaging, secure authentication, image sharing, and a clean responsive interface for seamless communication.
 
