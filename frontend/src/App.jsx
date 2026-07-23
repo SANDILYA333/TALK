@@ -1,22 +1,20 @@
 import { Show, SignInButton, SignUpButton, UserButton } from '@clerk/react'
 import { Button } from '@heroui/react';
+import { ThemeProvider } from './context/ThemeContext';
+import { WallpaperProvider } from './context/WallpaperContext';
+import { Route,Routes } from 'react-router';
+import {ChatPage} from "./pages/ChatPage.jsx"
 
 function App() {
   return (
-    <> 
-    <h1 className="text-4xl text-red-500 bg-amber-300">MY APP</h1>
-
-      <Button>Hello MF</Button>
-      <header>
-        <Show when="signed-out">
-          <SignInButton mode="modal" />
-          <SignUpButton mode="modal"  />
-        </Show>
-        <Show when="signed-in">
-          <UserButton />
-        </Show>
-      </header>
-    </>
+    <ThemeProvider> 
+      <WallpaperProvider>
+        <Routes>
+          <Route path="/" element={<ChatPage/>}/>
+          <Route path="/" element={<ChatPage/>}/>
+        </Routes>
+      </WallpaperProvider>
+    </ThemeProvider>
   )
 }
 
