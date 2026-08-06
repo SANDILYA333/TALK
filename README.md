@@ -4,7 +4,7 @@ A modern, full-stack real-time chat application built with the MERN ecosystem an
 
 ## 🌐 Live Demo
 
-👉 https://real-time-chat-application-hc8y.onrender.com
+https://real-time-chat-application-hc8y.onrender.com
 
 ---
 
