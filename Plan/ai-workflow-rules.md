@@ -50,10 +50,27 @@ Whenever code changes impact any of the following, update the corresponding `Pla
 - **Product scope additions or exclusions** $\rightarrow$ `Plan/project-overview.md`
 - **New styling or coding conventions** $\rightarrow$ `Plan/code-standards.md`
 
+## Learning Knowledge Base Integration
+
+The `Learning/` directory is TALK's living engineering knowledge base, answering **"What am I learning while building it, why does it matter, and how does it actually work inside TALK?"**
+
+- **Mandatory Creation Rule**: Any implementation introducing a meaningful new engineering concept, architectural pattern, security mechanism, cryptographic primitive/protocol, networking mechanism, storage mechanism, or infrastructure decision must create or update the corresponding documentation under `Learning/`.
+- **Content Requirements**: Every learning document must include:
+  1. Concrete references to actual TALK source files, models, functions, or middleware.
+  2. The underlying engineering rationale for why the concept is needed in TALK.
+  3. Alternatives considered and explicit trade-offs accepted.
+  4. Security implications (Asset $\rightarrow$ Threat $\rightarrow$ Attack $\rightarrow$ Mitigation $\rightarrow$ Residual risk).
+  5. Failure modes, edge cases, and debugging lessons.
+  6. Core takeaways and interview defense questions.
+- **Architectural Decisions**: Whenever a decision materially impacts architecture, cryptography, security, data modeling, or networking, create a formal Architecture Decision Record under `Learning/12-architecture-decisions/ADR-XXX-<slug>.md`.
+- **Feature Learning Journals**: Upon beginning implementation of a major roadmap feature from `Plan/implementation.md`, initialize a feature learning journal under `Learning/13-feature-learning/<feature-name>.md`.
+- **No Speculative Filler or Codebase Duplication**: Do not pre-populate empty documents for future features. Do not copy entire source files into learning documentation.
+
 ## Verification Gate
 
 Before concluding any implementation unit or transitioning to a new task, complete the following verification checklist:
 1. **Frontend Production Build**: Run `npm run build` from `frontend/` and ensure zero compilation or syntax errors.
 2. **Backend Production Build**: Run `npm run build` from `backend/` and verify assets copy cleanly to `dist/`.
 3. **Architectural Invariants**: Confirm that no invariants in `Plan/architecture.md` were breached (e.g. unauthenticated routes, exposed secrets).
-4. **Documentation Sync**: Verify that `Plan/progress-tracker.md` reflects the current implementation state.
+4. **Documentation Sync**: Verify that `Plan/progress-tracker.md` and any affected `Learning/` modules reflect the current implementation state.
+
