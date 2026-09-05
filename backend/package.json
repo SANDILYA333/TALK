@@ -7,7 +7,7 @@
     "build": "rm -rf dist && cp -R src dist",
     "dev": "npx nodemon src/index.js",
     "start": "node src/index.js",
-    "db:seed":"node src/seeds/user.seed.js"
+    "db:seed": "node src/seeds/user.seed.js"
   },
   "keywords": [],
   "author": "",
@@ -23,5 +23,8 @@
     "mongoose": "^9.8.0",
     "multer": "^2.2.0",
     "socket.io": "^4.8.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
   }
 }
