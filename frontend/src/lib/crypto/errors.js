@@ -34,3 +34,18 @@ export class KeyStorageError extends CryptographicError {
     this.name = "KeyStorageError";
   }
 }
+
+export class ConnectIdError extends CryptographicError {
+  constructor(message, cause = null) {
+    super(message, "CONNECT_ID_ERROR", cause);
+    this.name = "ConnectIdError";
+  }
+}
+
+export class InvalidConnectIdError extends ConnectIdError {
+  constructor(message, cause = null) {
+    super(message, cause);
+    this.code = "INVALID_CONNECT_ID_ERROR";
+    this.name = "InvalidConnectIdError";
+  }
+}
