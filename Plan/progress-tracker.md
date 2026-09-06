@@ -4,13 +4,22 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
-- **Phase 1 Complete (MVP Baseline Established) / Phase 2 In Progress (Hardening, Security & Real-Time Reliability)**
+- **Feature 1 (Public-Key Connect ID) — Phase 0: Reconnaissance & Architecture Lock Complete**
+- **Next: Feature 1 — Phase 1: Cryptographic Identity Foundation**
 
 ## Current Goal
 
-- Establish a rock-solid, production-grade foundation: harden authentication & authorization trust boundaries, secure Socket.io connection handshakes, eliminate memory/state synchronization race conditions, and prepare system architecture for privacy & cryptographic scaling (E2E encryption roadmap).
+- Build the cryptographic identity foundation for TALK: implement client-side asymmetric keypair generation (X25519) and secure IndexedDB persistence, while preserving Clerk session authentication and ensuring private keys never leave user devices.
 
 ## Completed
+
+- **Feature 1 — Phase 0: Reconnaissance & Architecture Lock**:
+  - Executed comprehensive identity reconnaissance across backend, frontend, database, and socket layers ([`Learning/13-feature-learning/connect-id.md`](file:///home/kafka/Coding/Web_Dev/Projects/Real%20Time%20Chat%20Application/Real-Time-Chat-Application/Learning/13-feature-learning/connect-id.md)).
+  - Audited Clerk-to-MongoDB synchronization, Webhook Svix verification, and `req.user` hydration.
+  - Identified core architectural assumptions (1 user = 1 socket, 1 user = 1 device, user identity = MongoDB `_id`).
+  - Audited PII exposure vectors (`User.email` in conversation subtitles, global directory enumeration on `/api/messages/users`).
+  - Audited Socket.io trust boundaries (unauthenticated query `userId`, flat `userSocketMap` multi-tab race condition).
+  - Defined the future integration boundary between Clerk account authentication and cryptographic communication identity.
 
 - **Core Full-Stack Infrastructure**:
   - Express 5 ESM backend configured with CORS, dotenv, and MongoDB Atlas connectivity via Mongoose (`backend/src/index.js`, `backend/src/lib/db.js`).
