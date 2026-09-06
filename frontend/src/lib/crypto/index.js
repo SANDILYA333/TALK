@@ -12,3 +12,4 @@ export * from "./keypair.js";
 export * from "./storage.js";
 export * from "./identity.js";
 export * from "./connect-id.js";
+export * from "./binding.js";

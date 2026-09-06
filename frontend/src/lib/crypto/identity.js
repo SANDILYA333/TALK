@@ -94,6 +94,39 @@ export function getDeviceConnectId() {
 }
 
 /**
+ * Determines whether a given device record from the backend corresponds to
+ * the current device's local cryptographic identity.
+ * 
+ * Invariant: Identifies the current device strictly by cryptographic Connect ID / Public Key,
+ * eliminating any reliance on unreliable and invasive browser fingerprinting.
+ *
+ * @param {object} deviceRecord Device record from backend registry
+ * @param {object} [localIdentity] Optional local identity object (defaults to active in-memory identity)
+ * @returns {boolean}
+ */
+export function isCurrentDevice(deviceRecord, localIdentity = activeIdentity) {
+  if (!deviceRecord || !localIdentity) {
+    return false;
+  }
+
+  const recordConnectId = deviceRecord.connectId?.toUpperCase();
+  const localConnectId = localIdentity.connectId?.toUpperCase();
+
+  if (recordConnectId && localConnectId && recordConnectId === localConnectId) {
+    return true;
+  }
+
+  const recordKey = deviceRecord.publicKey?.toLowerCase();
+  const localKey = (localIdentity.publicKeyHex || "")?.toLowerCase();
+
+  if (recordKey && localKey && recordKey === localKey) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Resets the in-memory cache and clears storage (for testing and isolated resets).
  * @returns {Promise<void>}
  */
@@ -101,3 +134,4 @@ export async function resetDeviceIdentity() {
   activeIdentity = null;
   await clearIdentityKeyPair();
 }
+
