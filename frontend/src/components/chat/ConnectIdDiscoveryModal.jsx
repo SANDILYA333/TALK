@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button, Modal, useOverlayState } from "@heroui/react";
 import {
   Search,
@@ -10,9 +10,11 @@ import {
   AlertCircle,
   Sparkles,
   Loader2,
+  Fingerprint,
 } from "lucide-react";
 import { useConnectIdDiscovery } from "../../hooks/useConnectIdDiscovery";
 import { getInitials } from "../../hooks/useSelectedConversation";
+import { useAuthStore } from "../../store/useAuthStore";
 
 export function ConnectIdDiscoveryModal({ trigger }) {
   const modal = useOverlayState();
@@ -29,12 +31,28 @@ export function ConnectIdDiscoveryModal({ trigger }) {
     isError,
   } = useConnectIdDiscovery();
 
+  const myConnectId = useAuthStore((state) => state.deviceConnectId);
+  const isDeviceBound = useAuthStore((state) => state.isDeviceBound);
+  const isBindingDevice = useAuthStore((state) => state.isBindingDevice);
+  const initDeviceIdentity = useAuthStore((state) => state.initDeviceIdentity);
+  const authUser = useAuthStore((state) => state.authUser);
+
   const [copied, setCopied] = useState(false);
+  const [myIdCopied, setMyIdCopied] = useState(false);
+
+  useEffect(() => {
+    if (authUser && !myConnectId) {
+      initDeviceIdentity();
+    }
+  }, [authUser, myConnectId, initDeviceIdentity]);
 
   const handleOpenChange = (isOpen) => {
     if (!isOpen) {
       reset();
       setCopied(false);
+      setMyIdCopied(false);
+    } else if (authUser && !myConnectId) {
+      initDeviceIdentity();
     }
   };
 
@@ -50,6 +68,14 @@ export function ConnectIdDiscoveryModal({ trigger }) {
       navigator.clipboard.writeText(id);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const handleCopyMyId = () => {
+    if (myConnectId && navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(myConnectId);
+      setMyIdCopied(true);
+      setTimeout(() => setMyIdCopied(false), 2000);
     }
   };
 
@@ -89,9 +115,75 @@ export function ConnectIdDiscoveryModal({ trigger }) {
               <Modal.CloseTrigger />
             </Modal.Header>
 
-            <Modal.Body className="space-y-5 pt-4">
+            <Modal.Body className="space-y-4 pt-4">
+              {/* Your Device Identity Card */}
+              <div className="rounded-xl border border-primary/25 bg-primary/5 p-3.5 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 text-xs font-semibold text-primary">
+                    <Fingerprint className="size-4 text-primary" />
+                    Your Connect ID
+                  </span>
+                  {isDeviceBound ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-success/15 px-2 py-0.5 text-[10px] font-semibold text-success">
+                      <span className="size-1.5 rounded-full bg-success animate-pulse" />
+                      Active & Registered
+                    </span>
+                  ) : isBindingDevice ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-warning/15 px-2 py-0.5 text-[10px] font-medium text-warning">
+                      <Loader2 className="size-2.5 animate-spin" />
+                      Registering key...
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-default/20 px-2 py-0.5 text-[10px] font-medium text-muted">
+                      Ready
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between gap-2 rounded-lg border border-border/70 bg-background/90 px-3 py-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <KeyRound className="size-4 text-primary shrink-0" />
+                    <code className="truncate font-mono text-sm font-bold tracking-wide text-foreground">
+                      {myConnectId || (isBindingDevice ? "Generating..." : "TALK-XXXX-XXXX")}
+                    </code>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={handleCopyMyId}
+                    isDisabled={!myConnectId}
+                    className="h-7 gap-1 px-2.5 text-xs font-medium text-foreground hover:bg-default/20"
+                    aria-label="Copy my Connect ID"
+                  >
+                    {myIdCopied ? (
+                      <>
+                        <Check className="size-3.5 text-success" />
+                        <span className="text-success font-semibold">Copied!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="size-3.5 text-muted" />
+                        <span>Copy</span>
+                      </>
+                    )}
+                  </Button>
+                </div>
+                <p className="text-[11px] text-muted">
+                  Share this ID with friends so they can find and chat with you securely.
+                </p>
+              </div>
+
+              {/* Visual Divider */}
+              <div className="relative flex items-center justify-center pt-1">
+                <div className="w-full border-t border-border" />
+                <span className="absolute bg-background px-3 text-[10px] font-semibold text-muted uppercase tracking-wider">
+                  Find a peer
+                </span>
+              </div>
+
               {/* Search Form */}
-              <form onSubmit={handleSubmit} className="space-y-3">
+              <form onSubmit={handleSubmit} className="space-y-2.5">
                 <div className="relative flex items-center">
                   <KeyRound className="pointer-events-none absolute left-3 size-4 text-muted" aria-hidden />
                   <input
@@ -101,7 +193,6 @@ export function ConnectIdDiscoveryModal({ trigger }) {
                     placeholder="TALK-XXXX-XXXX"
                     className="w-full rounded-xl border border-border bg-default/10 py-2.5 pl-9 pr-24 font-mono text-sm uppercase tracking-wider text-foreground placeholder:normal-case placeholder:tracking-normal placeholder:text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                     aria-label="Enter TALK Connect ID"
-                    autoFocus
                   />
                   <Button
                     type="submit"
@@ -124,6 +215,7 @@ export function ConnectIdDiscoveryModal({ trigger }) {
                   Connect IDs are 14-character identifiers (e.g. <span className="font-mono text-foreground font-medium">TALK-8F2K-91XZ</span>) derived directly from device public keys.
                 </p>
               </form>
+
 
               {/* Status / Output Section */}
               <div aria-live="polite">
