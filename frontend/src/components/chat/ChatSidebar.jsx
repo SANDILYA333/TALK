@@ -7,6 +7,7 @@ import { UserButton } from "@clerk/react";
 import { SearchField, Tabs } from "@heroui/react";
 import { MessageSquareIcon, UsersIcon } from "lucide-react";
 import { ConversationRow } from "./ConversationRow";
+import { ConnectIdDiscoveryModal } from "./ConnectIdDiscoveryModal";
 
 function mapUserForList(user, onlineUsers) {
   return {
@@ -70,6 +71,7 @@ function ChatSidebar() {
           <p className="flex-1 truncate text-lg font-bold tracking-tight sm:text-[22px]">
             {APP_NAME}
           </p>
+          <ConnectIdDiscoveryModal />
           <UserButton
             appearance={{
               elements: {
