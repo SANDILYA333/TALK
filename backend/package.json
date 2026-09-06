@@ -4,6 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "test": "node --test 'src/**/__tests__/**/*.test.js'",
     "build": "rm -rf dist && cp -R src dist",
     "dev": "npx nodemon src/index.js",
     "start": "node src/index.js",
