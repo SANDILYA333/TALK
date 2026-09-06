@@ -1,21 +1,24 @@
 import { generateIdentityKeyPair, exportPublicKey } from "./keypair.js";
 import { loadIdentityKeyPair, saveIdentityKeyPair, clearIdentityKeyPair } from "./storage.js";
+import { deriveConnectId } from "./connect-id.js";
 
 // Cached in-memory active device identity
 let activeIdentity = null;
 
 /**
- * High-level idempotent entry point for device cryptographic identity.
+ * High-level idempotent entry point for device cryptographic identity and Connect ID.
  * 
  * Flow:
  * 1. Checks in-memory cache.
  * 2. Checks local persistent storage (IndexedDB).
  * 3. If missing, generates a fresh X25519 keypair and persists it.
- * 4. Returns canonical identity object containing public metadata and internal CryptoKey references.
+ * 4. Derives deterministic Connect ID from canonical public key.
+ * 5. Returns canonical identity object containing public metadata, connectId, and internal CryptoKey references.
  * 
  * @returns {Promise<{
  *   version: number,
  *   algorithm: string,
+ *   connectId: string,
  *   publicKeyRaw: Uint8Array,
  *   publicKeyHex: string,
  *   publicKeyBase64: string,
@@ -34,10 +37,12 @@ export async function getOrCreateDeviceIdentity() {
 
   if (existing) {
     const exportedPublic = await exportPublicKey(existing.publicKey);
+    const connectId = await deriveConnectId(exportedPublic.raw);
 
     activeIdentity = {
       version: exportedPublic.version,
       algorithm: exportedPublic.algorithm,
+      connectId,
       publicKeyRaw: exportedPublic.raw,
       publicKeyHex: exportedPublic.hex,
       publicKeyBase64: exportedPublic.base64,
@@ -54,11 +59,13 @@ export async function getOrCreateDeviceIdentity() {
   await saveIdentityKeyPair(newKeyPair);
 
   const exportedPublic = await exportPublicKey(newKeyPair.publicKey);
+  const connectId = await deriveConnectId(exportedPublic.raw);
   const now = new Date().toISOString();
 
   activeIdentity = {
     version: exportedPublic.version,
     algorithm: exportedPublic.algorithm,
+    connectId,
     publicKeyRaw: exportedPublic.raw,
     publicKeyHex: exportedPublic.hex,
     publicKeyBase64: exportedPublic.base64,
@@ -76,6 +83,14 @@ export async function getOrCreateDeviceIdentity() {
  */
 export function getActiveDeviceIdentity() {
   return activeIdentity;
+}
+
+/**
+ * Returns the active device's Connect ID if loaded, or null.
+ * @returns {string|null}
+ */
+export function getDeviceConnectId() {
+  return activeIdentity?.connectId || null;
 }
 
 /**
