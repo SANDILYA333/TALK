@@ -4,14 +4,23 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
-- **Feature 1 (Public-Key Connect ID) — Phase 1: Cryptographic Identity Foundation Complete**
-- **Next: Feature 1 — Phase 2: Connect ID Generation**
+- **Feature 1 (Public-Key Connect ID) — Phase 2: Deterministic Connect ID Generation Complete**
+- **Next: Feature 1 — Phase 3: Backend Identity Registry**
 
 ## Current Goal
 
-- Transform the client-side cryptographic identity into a human-shareable, privacy-preserving Connect ID (`TALK-XXXX-XXXX` format) with deterministic hashing, Base32 encoding, and validation rules.
+- Connect the client-side cryptographic identity and Connect ID to TALK's backend: implement secure public-key and Connect ID storage in MongoDB, unique constraints, lookup APIs, and migration strategy without exposing private keys.
 
 ## Completed
+
+- **Feature 1 — Phase 2: Deterministic Connect ID Generation**:
+  - Implemented pure deterministic Connect ID derivation from X25519 canonical public keys in [`frontend/src/lib/crypto/connect-id.js`](file:///home/kafka/Coding/Web_Dev/Projects/Real%20Time%20Chat%20Application/Real-Time-Chat-Application/frontend/src/lib/crypto/connect-id.js).
+  - Applied SHA-256 with domain separation tag (`TALK-CONNECT-ID-V1:`), 5-byte (40-bit) truncation, and Crockford Base32 encoding to format `TALK-XXXX-XXXX` codes (e.g. `TALK-8F2K-91XZ`).
+  - Implemented human-error tolerant normalization (`normalizeConnectId`), format validation (`isValidConnectId`), and structural parsing (`parseConnectId`).
+  - Integrated `connectId` into `getOrCreateDeviceIdentity()` and `getDeviceConnectId()` in [`frontend/src/lib/crypto/identity.js`](file:///home/kafka/Coding/Web_Dev/Projects/Real%20Time%20Chat%20Application/Real-Time-Chat-Application/frontend/src/lib/crypto/identity.js).
+  - Added 14 automated unit tests in [`frontend/src/lib/crypto/__tests__/connect-id.test.js`](file:///home/kafka/Coding/Web_Dev/Projects/Real%20Time%20Chat%20Application/Real-Time-Chat-Application/frontend/src/lib/crypto/__tests__/connect-id.test.js) (27 total crypto tests passing).
+  - Created ADR-002 ([`Learning/12-architecture-decisions/ADR-002-connect-id-derivation.md`](file:///home/kafka/Coding/Web_Dev/Projects/Real%20Time%20Chat%20Application/Real-Time-Chat-Application/Learning/12-architecture-decisions/ADR-002-connect-id-derivation.md)) and conceptual learning docs in `Learning/05-cryptography/` and `Learning/07-privacy/`.
+
 
 - **Feature 1 — Phase 1: Cryptographic Identity Foundation**:
   - Implemented isolated, dependency-free Web Crypto `X25519` keypair generation in [`frontend/src/lib/crypto/keypair.js`](file:///home/kafka/Coding/Web_Dev/Projects/Real%20Time%20Chat%20Application/Real-Time-Chat-Application/frontend/src/lib/crypto/keypair.js).

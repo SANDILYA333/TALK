@@ -471,3 +471,66 @@ Phase 2 (Connect ID Generation) can assume:
 2. The public key is guaranteed to be available as a raw `Uint8Array` (32 bytes), lowercase 64-char hex, and standard Base64.
 3. The private key is securely persisted in IndexedDB and does not need to be touched or exposed during Connect ID generation.
 4. The identity is stable across page reloads and browser sessions.
+
+---
+
+# Feature 1 — Phase 2: Deterministic Connect ID Generation
+
+## 1. What We Were Trying to Build
+In Phase 2, we built the **Connect ID derivation and formatting layer** on top of the Phase 1 X25519 cryptographic identity foundation. The goal was to transform a 32-byte public key into a compact, human-readable, error-tolerant, and completely PII-free identifier (`TALK-XXXX-XXXX`) without modifying backend, database, Clerk, or Socket.io systems.
+
+## 2. Concepts Learned
+- **Cryptographic Domain Separation**: Prepending fixed domain prefixes (`TALK-CONNECT-ID-V1:`) to prevent hash values from colliding across different cryptographic protocols or contexts.
+- **Crockford Base32 Encoding**: Bitwise conversion of 5 bytes (40 bits) into 8 symbols from a 32-character alphabet specifically designed to eliminate human transcription errors.
+- **Canonicalization for Hash Determinism**: Ensuring that regardless of whether a public key is passed as a `CryptoKey`, raw `Uint8Array`, Hex string, or Base64 string, the derivation always operates on the exact same 32-byte binary point.
+- **Pure Function Derivation**: Structuring identity derivation as an immutable, stateless mathematical transformation with zero network dependencies or side effects.
+
+## 3. Derivation Pipeline
+```text
+1. Public Key Input (CryptoKey | Uint8Array | Hex | Base64)
+   │
+   ▼
+2. Canonical 32-Byte Buffer
+   │
+   ▼
+3. Prepend Domain Tag: "TALK-CONNECT-ID-V1:" (19 bytes)
+   │
+   ▼
+4. Compute SHA-256 Digest (32 bytes)
+   │
+   ▼
+5. Truncate to First 5 Bytes (40 bits)
+   │
+   ▼
+6. Encode via Crockford Base32 into 8 Characters
+   │
+   ▼
+7. Format as "TALK-XXXX-XXXX" (14 characters total)
+```
+
+## 4. Normalization & Human Error Tolerance
+Crockford Base32 excludes `I`, `L`, `O`, and `U`. TALK implements intelligent input normalization in `normalizeConnectId()`:
+- Automatically maps `O` / `o` $\rightarrow$ `0`
+- Automatically maps `I` / `i` $\rightarrow$ `1`
+- Automatically maps `L` / `l` $\rightarrow$ `1`
+- Tolerates missing hyphens (e.g. `TALK8F2K91XZ` $\rightarrow$ `TALK-8F2K-91XZ`)
+- Tolerates missing prefix and lowercase (e.g. `8f2k91xz` $\rightarrow$ `TALK-8F2K-91XZ`)
+- Strips internal whitespace and formatting artifacts
+
+## 5. Security & Privacy Invariants
+- **Zero PII**: Derivation accepts only public key material; user names, emails, and account IDs have zero influence on the Connect ID.
+- **Private Key Independence**: The private scalar is never needed, never exported, and never accessed during Connect ID generation.
+- **Zero Network Calls**: Executed 100% locally in browser memory via Web Crypto.
+
+## 6. Important Implementation Files
+- [`frontend/src/lib/crypto/constants.js`](file:///home/kafka/Coding/Web_Dev/Projects/Real%20Time%20Chat%20Application/Real-Time-Chat-Application/frontend/src/lib/crypto/constants.js) (Connect ID prefixes, regex, domain tag)
+- [`frontend/src/lib/crypto/errors.js`](file:///home/kafka/Coding/Web_Dev/Projects/Real%20Time%20Chat%20Application/Real-Time-Chat-Application/frontend/src/lib/crypto/errors.js) (`ConnectIdError`, `InvalidConnectIdError`)
+- [`frontend/src/lib/crypto/connect-id.js`](file:///home/kafka/Coding/Web_Dev/Projects/Real%20Time%20Chat%20Application/Real-Time-Chat-Application/frontend/src/lib/crypto/connect-id.js) (`deriveConnectId`, `encodeCrockfordBase32`, `isValidConnectId`, `normalizeConnectId`, `parseConnectId`)
+- [`frontend/src/lib/crypto/identity.js`](file:///home/kafka/Coding/Web_Dev/Projects/Real%20Time%20Chat%20Application/Real-Time-Chat-Application/frontend/src/lib/crypto/identity.js) (High-level identity integration returning `connectId`)
+- [`frontend/src/lib/crypto/__tests__/connect-id.test.js`](file:///home/kafka/Coding/Web_Dev/Projects/Real%20Time%20Chat%20Application/Real-Time-Chat-Application/frontend/src/lib/crypto/__tests__/connect-id.test.js) (14 Connect ID automated unit tests)
+
+## 7. What Phase 3 Can Now Assume
+Phase 3 (**Backend Identity Registry**) can assume:
+1. Every client device can deterministically derive its canonical `TALK-XXXX-XXXX` Connect ID from its public key.
+2. The Connect ID is strictly formatted, normalized, and validated.
+3. The backend can store the `connectId` string in MongoDB indexed alongside the canonical public key string for fast, privacy-preserving lookups.
