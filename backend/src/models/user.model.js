@@ -23,6 +23,15 @@ const userSchema = new mongoose.Schema({
         type:String,
         default:"",
     },
+
+    connectId:{
+        type:String,
+        unique:true,
+        sparse:true,
+        index:true,
+        uppercase:true,
+        trim:true,
+    },
 },{timestamps: true}
 ,);
 
