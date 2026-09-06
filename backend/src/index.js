@@ -15,6 +15,7 @@ import job from "./lib/cron.js";
 import clerkWebhook from "./webhooks/clerk.webhooks.js";
 import authRoutes from "./routes/auth.route.js";
 import messageRoutes from "./routes/message.route.js";
+import identityRoutes from "./routes/identity.route.js";
 import { app,server } from "./lib/socket.js";
 
 const PORT = process.env.PORT;
@@ -39,6 +40,7 @@ app.get("/health", (req, res) => {
 
 app.use("/api/auth", authRoutes);
 app.use("/api/messages", messageRoutes);
+app.use("/api/identity", identityRoutes);
 
 if (fs.existsSync(publicDir)) {
   app.use(express.static(publicDir));
