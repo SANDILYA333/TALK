@@ -11,10 +11,12 @@ import {
   Sparkles,
   Loader2,
   Fingerprint,
+  MessageSquare,
 } from "lucide-react";
 import { useConnectIdDiscovery } from "../../hooks/useConnectIdDiscovery";
 import { getInitials } from "../../hooks/useSelectedConversation";
 import { useAuthStore } from "../../store/useAuthStore";
+import { useChatStore } from "../../store/useChatStore";
 
 export function ConnectIdDiscoveryModal({ trigger }) {
   const modal = useOverlayState();
@@ -36,6 +38,10 @@ export function ConnectIdDiscoveryModal({ trigger }) {
   const isBindingDevice = useAuthStore((state) => state.isBindingDevice);
   const initDeviceIdentity = useAuthStore((state) => state.initDeviceIdentity);
   const authUser = useAuthStore((state) => state.authUser);
+
+  const users = useChatStore((state) => state.users);
+  const setActiveConversationId = useChatStore((state) => state.setActiveConversationId);
+  const getUsers = useChatStore((state) => state.getUsers);
 
   const [copied, setCopied] = useState(false);
   const [myIdCopied, setMyIdCopied] = useState(false);
@@ -276,7 +282,7 @@ export function ConnectIdDiscoveryModal({ trigger }) {
                       </div>
                     </div>
 
-                    {/* Public Key Fingerprint Preview */}
+                      {/* Public Key Fingerprint Preview */}
                     {result.publicKey && (
                       <div className="border-t border-border/50 pt-2 text-[11px] text-muted">
                         <span className="font-medium text-foreground">Public Key:</span>{" "}
@@ -285,6 +291,40 @@ export function ConnectIdDiscoveryModal({ trigger }) {
                         </code>
                       </div>
                     )}
+
+                    {/* Start Chat / Connect Action Button */}
+                    <div className="pt-2">
+                      <Button
+                        type="button"
+                        color="primary"
+                        className="w-full flex items-center justify-center gap-2 text-xs font-semibold py-2.5 rounded-xl shadow-md"
+                        onClick={async () => {
+                          let target = users.find(
+                            (u) =>
+                              (u.connectId && u.connectId.toUpperCase() === result.connectId?.toUpperCase()) ||
+                              u.fullName === result.user?.fullName
+                          );
+
+                          if (!target) {
+                            await getUsers();
+                            const refreshed = useChatStore.getState().users;
+                            target = refreshed.find(
+                              (u) =>
+                                (u.connectId && u.connectId.toUpperCase() === result.connectId?.toUpperCase()) ||
+                                u.fullName === result.user?.fullName
+                            );
+                          }
+
+                          if (target) {
+                            setActiveConversationId(target._id);
+                          }
+                          modal.setOpen(false);
+                        }}
+                      >
+                        <MessageSquare className="size-4" />
+                        <span>Start Chat with {result.user?.fullName?.split(" ")[0] || "User"}</span>
+                      </Button>
+                    </div>
                   </div>
                 )}
 
