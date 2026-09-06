@@ -4,14 +4,23 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
-- **Feature 1 (Public-Key Connect ID) — Phase 0: Reconnaissance & Architecture Lock Complete**
-- **Next: Feature 1 — Phase 1: Cryptographic Identity Foundation**
+- **Feature 1 (Public-Key Connect ID) — Phase 1: Cryptographic Identity Foundation Complete**
+- **Next: Feature 1 — Phase 2: Connect ID Generation**
 
 ## Current Goal
 
-- Build the cryptographic identity foundation for TALK: implement client-side asymmetric keypair generation (X25519) and secure IndexedDB persistence, while preserving Clerk session authentication and ensuring private keys never leave user devices.
+- Transform the client-side cryptographic identity into a human-shareable, privacy-preserving Connect ID (`TALK-XXXX-XXXX` format) with deterministic hashing, Base32 encoding, and validation rules.
 
 ## Completed
+
+- **Feature 1 — Phase 1: Cryptographic Identity Foundation**:
+  - Implemented isolated, dependency-free Web Crypto `X25519` keypair generation in [`frontend/src/lib/crypto/keypair.js`](file:///home/kafka/Coding/Web_Dev/Projects/Real%20Time%20Chat%20Application/Real-Time-Chat-Application/frontend/src/lib/crypto/keypair.js).
+  - Implemented canonical public-key serialization (32-byte raw Uint8Array, 64-character lowercase hex, and Base64) with deterministic format validation.
+  - Implemented secure local persistence in IndexedDB (`talk_crypto_db` / `identity_keys`) with PKCS#8 DER private key serialization and in-memory test fallback ([`frontend/src/lib/crypto/storage.js`](file:///home/kafka/Coding/Web_Dev/Projects/Real%20Time%20Chat%20Application/Real-Time-Chat-Application/frontend/src/lib/crypto/storage.js)).
+  - Implemented idempotent device identity manager [`frontend/src/lib/crypto/identity.js`](file:///home/kafka/Coding/Web_Dev/Projects/Real%20Time%20Chat%20Application/Real-Time-Chat-Application/frontend/src/lib/crypto/identity.js) (`getOrCreateDeviceIdentity`).
+  - Added 13 unit tests via `node:test` covering generation, uniqueness, Diffie-Hellman consistency, serialization round-trips, invalid key rejection, and persistence idempotence ([`frontend/src/lib/crypto/__tests__/identity.test.js`](file:///home/kafka/Coding/Web_Dev/Projects/Real%20Time%20Chat%20Application/Real-Time-Chat-Application/frontend/src/lib/crypto/__tests__/identity.test.js)).
+  - Created ADR-001 ([`Learning/12-architecture-decisions/ADR-001-x25519-identity-keypair.md`](file:///home/kafka/Coding/Web_Dev/Projects/Real%20Time%20Chat%20Application/Real-Time-Chat-Application/Learning/12-architecture-decisions/ADR-001-x25519-identity-keypair.md)) and conceptual learning documentation in `Learning/05-cryptography/` and `Learning/04-databases-storage/`.
+
 
 - **Feature 1 — Phase 0: Reconnaissance & Architecture Lock**:
   - Executed comprehensive identity reconnaissance across backend, frontend, database, and socket layers ([`Learning/13-feature-learning/connect-id.md`](file:///home/kafka/Coding/Web_Dev/Projects/Real%20Time%20Chat%20Application/Real-Time-Chat-Application/Learning/13-feature-learning/connect-id.md)).
