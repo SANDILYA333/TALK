@@ -4,14 +4,39 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
-- **FEATURE 1: PUBLIC-KEY CONNECT ID / PII-FREE IDENTITY — 100% COMPLETE, RELEASE CERTIFIED & ARCHITECTURE FROZEN (PHASES 0–10)**
-- **Next: FEATURE 2: END-TO-END ENCRYPTED MESSAGING (SIGNAL PROTOCOL / DOUBLE RATCHET)**
+- **FEATURE 2: END-TO-END ENCRYPTED MESSAGING (SIGNAL PROTOCOL / DOUBLE RATCHET)**
+- **Phase 1 Complete: Cryptographic Architecture, Threat Model & Protocol Foundation**
+- **Phase 2 Complete: Pre-Key Infrastructure (Client Generation, Storage, Server Registry & Atomic Consumption)**
+- **Next: Feature 2 — Phase 3: X3DH Session Establishment & Master Secret Agreement**
 
 ## Current Goal
 
-- Feature 1 has achieved complete release certification, architecture freeze (ADR-009), 114 passing automated tests, zero-secret logging, and comprehensive multi-track learning documentation. The codebase is fully prepared for Feature 2 (End-to-End Encryption / Prekey Bundles / Double Ratchet).
+- Feature 2 has completed Phase 1 (Architecture & Foundation) and Phase 2 (Pre-Key Infrastructure). Client devices generate and persist Ed25519 signing keys, Signed Prekeys, and One-Time Prekey pools locally in IndexedDB, and publish public bundles to the server registry. The backend validates Ed25519 signatures, enforces IDOR boundaries, and provides atomic, single-use OPK consumption. The codebase is fully prepared for Phase 3 (X3DH Session Establishment).
 
 ## Completed
+
+- **Feature 2 — Phase 2: Pre-Key Infrastructure (Client Generation, Storage, Server Registry & Atomic Consumption)**:
+  - Implemented dedicated Mongoose model [`backend/src/models/prekey.model.js`](file:///home/kafka/Coding/Web_Dev/Projects/Real%20Time%20Chat%20Application/Real-Time-Chat-Application/backend/src/models/prekey.model.js) (`PreKeyBundle`) preserving Feature 1 `DeviceIdentity` contract freeze.
+  - Implemented server-side Ed25519 signature verification utility in [`backend/src/lib/crypto/prekey-verification.js`](file:///home/kafka/Coding/Web_Dev/Projects/Real%20Time%20Chat%20Application/Real-Time-Chat-Application/backend/src/lib/crypto/prekey-verification.js).
+  - Implemented registry controller in [`backend/src/controllers/prekey.controller.js`](file:///home/kafka/Coding/Web_Dev/Projects/Real%20Time%20Chat%20Application/Real-Time-Chat-Application/backend/src/controllers/prekey.controller.js) with single-step atomic OPK allocation via `findOneAndUpdate` + unique `consumptionId`, IDOR access controls, and Triple-DH graceful exhaustion fallbacks.
+  - Mounted endpoints on [`backend/src/routes/identity.route.js`](file:///home/kafka/Coding/Web_Dev/Projects/Real%20Time%20Chat%20Application/Real-Time-Chat-Application/backend/src/routes/identity.route.js): `POST /api/identity/prekeys/register`, `GET /api/identity/prekeys/bundle/:connectId`, `POST /api/identity/prekeys/replenish`, `GET /api/identity/prekeys/status`.
+  - Implemented client prekey storage engine in [`frontend/src/lib/crypto/e2e/storage.js`](file:///home/kafka/Coding/Web_Dev/Projects/Real%20Time%20Chat%20Application/Real-Time-Chat-Application/frontend/src/lib/crypto/e2e/storage.js) for origin-isolated IndexedDB persistence of $IK_{sign}$, $SPK$, and $OPK$ private keys.
+  - Implemented client-side prekey manager [`frontend/src/lib/crypto/e2e/prekeys.js`](file:///home/kafka/Coding/Web_Dev/Projects/Real%20Time%20Chat%20Application/Real-Time-Chat-Application/frontend/src/lib/crypto/e2e/prekeys.js) with Ed25519 signing, tampering verification, batch OPK generation, and threshold replenishment.
+  - Implemented API client [`frontend/src/lib/api/prekey.js`](file:///home/kafka/Coding/Web_Dev/Projects/Real%20Time%20Chat%20Application/Real-Time-Chat-Application/frontend/src/lib/api/prekey.js) with strict `assertNoSecretMaterial()` guards.
+  - Published ADR-011 ([`Learning/12-architecture-decisions/ADR-011-prekey-bundle-infrastructure-and-atomic-consumption.md`](file:///home/kafka/Coding/Web_Dev/Projects/Real%20Time%20Chat%20Application/Real-Time-Chat-Application/Learning/12-architecture-decisions/ADR-011-prekey-bundle-infrastructure-and-atomic-consumption.md)) and conceptual learning guide in [`Learning/06-end-to-end-encryption/02-prekeys-and-x3dh-prekey-bundles.md`](file:///home/kafka/Coding/Web_Dev/Projects/Real%20Time%20Chat%20Application/Real-Time-Chat-Application/Learning/06-end-to-end-encryption/02-prekeys-and-x3dh-prekey-bundles.md).
+  - 151 automated tests passing across backend (72 tests) and frontend (79 tests) with 0 lint warnings and clean production builds.
+
+- **Feature 2 — Phase 1: Cryptographic Architecture, Threat Model & Protocol Foundation**:
+  - Resolved the cryptographic primitive separation challenge via **Dual-Key Device Identity Architecture** ($X25519$ $IK_{dh}$ + $Ed25519$ $IK_{sign}$) preserving Feature 1 frozen contracts (ADR-009) while providing authenticated prekey signatures for X3DH.
+  - Published comprehensive Architecture Decision Record ADR-010 ([`Learning/12-architecture-decisions/ADR-010-e2e-encryption-cryptographic-architecture.md`](file:///home/kafka/Coding/Web_Dev/Projects/Real%20Time%20Chat%20Application/Real-Time-Chat-Application/Learning/12-architecture-decisions/ADR-010-e2e-encryption-cryptographic-architecture.md)).
+  - Published comprehensive 11-point Feature 2 Learning Journal ([`Learning/13-feature-learning/e2e-encryption.md`](file:///home/kafka/Coding/Web_Dev/Projects/Real%20Time%20Chat%20Application/Real-Time-Chat-Application/Learning/13-feature-learning/e2e-encryption.md)) with complete threat model, key hierarchy, X3DH/Double Ratchet state machines, failure modes, and interview defense questions.
+  - Published foundational conceptual guide in [`Learning/06-end-to-end-encryption/01-protocol-foundation-and-threat-model.md`](file:///home/kafka/Coding/Web_Dev/Projects/Real%20Time%20Chat%20Application/Real-Time-Chat-Application/Learning/06-end-to-end-encryption/01-protocol-foundation-and-threat-model.md).
+  - Implemented core protocol foundation modules in `frontend/src/lib/crypto/e2e/`:
+    - [`constants.js`](file:///home/kafka/Coding/Web_Dev/Projects/Real%20Time%20Chat%20Application/Real-Time-Chat-Application/frontend/src/lib/crypto/e2e/constants.js): Protocol versions, algorithm definitions (`X25519`, `Ed25519`, `AES-GCM`, `HKDF-SHA-256`), domain separation tags (`TALK-X3DH-V1:`, `TALK-DOUBLE-RATCHET-V1:`, `TALK-AEAD-AD-V1:`), bounds, and forbidden envelope secrets.
+    - [`envelope.js`](file:///home/kafka/Coding/Web_Dev/Projects/Real%20Time%20Chat%20Application/Real-Time-Chat-Application/frontend/src/lib/crypto/e2e/envelope.js): Ciphertext envelope builder, canonical Associated Data (AD) byte serializer, envelope validator, and recursive zero-secret assertion guard (`assertNoSecretMaterial`).
+    - [`types.js`](file:///home/kafka/Coding/Web_Dev/Projects/Real%20Time%20Chat%20Application/Real-Time-Chat-Application/frontend/src/lib/crypto/e2e/types.js): Prekey bundle structural validators and canonical signable byte generators.
+  - Added 16 automated unit test assertions in [`frontend/src/lib/crypto/e2e/__tests__/protocol-foundation.test.js`](file:///home/kafka/Coding/Web_Dev/Projects/Real%20Time%20Chat%20Application/Real-Time-Chat-Application/frontend/src/lib/crypto/e2e/__tests__/protocol-foundation.test.js) (68 total frontend tests passing, 62 backend tests passing, 130 tests total across repo).
+  - Clean frontend and backend production builds; 0 lint warnings.
 
 - **Feature 1 — Phase 10: Final Integration, Release Certification & Architecture Freeze**:
   - Conducted full-system integration and release certification across all 10 phases of Feature 1.
