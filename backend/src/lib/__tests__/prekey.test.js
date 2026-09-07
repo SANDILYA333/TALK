@@ -121,6 +121,7 @@ describe("Backend Pre-Key Infrastructure Suite (Feature 2 — Phase 2)", () => {
           if (unconsumed) {
             unconsumed.isConsumed = true;
             unconsumed.consumedAt = update.$set["oneTimePrekeys.$.consumedAt"] || new Date();
+            unconsumed.consumptionId = update.$set["oneTimePrekeys.$.consumptionId"] || null;
             bundle.activeOpkCount = bundle.oneTimePrekeys.filter((k) => !k.isConsumed).length;
             return Promise.resolve(bundle);
           } else {
