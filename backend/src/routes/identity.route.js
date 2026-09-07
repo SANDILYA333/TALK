@@ -1,4 +1,3 @@
-import express from "express";
 import {
   registerIdentity,
   lookupIdentity,
@@ -8,6 +7,12 @@ import {
   createChallenge,
   bindIdentity,
 } from "../controllers/identity.controller.js";
+import {
+  registerPrekeyBundle,
+  getPrekeyBundle,
+  replenishOneTimePrekeys,
+  getPrekeyStatus,
+} from "../controllers/prekey.controller.js";
 import { protectRoute } from "../middleware/auth.middleware.js";
 import { createRateLimiter } from "../middleware/rate-limit.middleware.js";
 
@@ -25,6 +30,13 @@ const challengeRateLimiter = createRateLimiter({
   windowMs: 60 * 1000,
   maxRequests: 20,
   message: "Too many binding challenge requests. Please wait a minute.",
+});
+
+// Rate limiter for prekey bundle retrieval: max 60 requests per minute
+const prekeyBundleRateLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  maxRequests: 60,
+  message: "Too many prekey bundle requests. Please wait a minute.",
 });
 
 // Request an ephemeral challenge nonce for identity binding
@@ -47,5 +59,20 @@ router.post("/devices/:id/revoke", protectRoute, revokeDevice);
 
 // Get current user's registered device identities (legacy compatibility)
 router.get("/me", protectRoute, getMyIdentities);
+
+// --- Feature 2 Pre-Key Infrastructure Routes ---
+
+// Register or update public Prekey Bundle for authenticated device
+router.post("/prekeys/register", protectRoute, registerPrekeyBundle);
+
+// Retrieve peer's public Prekey Bundle with atomic OPK consumption
+router.get("/prekeys/bundle/:connectId", protectRoute, prekeyBundleRateLimiter, getPrekeyBundle);
+
+// Replenish One-Time Prekeys for authenticated device
+router.post("/prekeys/replenish", protectRoute, replenishOneTimePrekeys);
+
+// Check prekey inventory status for authenticated device
+router.get("/prekeys/status", protectRoute, getPrekeyStatus);
+router.get("/prekeys/status/:connectId", protectRoute, getPrekeyStatus);
 
 export default router;
