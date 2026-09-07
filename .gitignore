@@ -25,5 +25,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-Learning\
-Plan\
+Learning/
+Plan/
+
+# Graphify artifacts and outputs
+graphify-out/
+.graphify*
+*.graphify*
