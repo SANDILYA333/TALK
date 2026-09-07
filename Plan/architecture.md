@@ -65,12 +65,28 @@
   - `utils.js`: Message timestamp formatting helper (`formatMessageTime`).
 - `frontend/src/data/` & `styles/` — Design constants and custom stylesheets (`herouiThemePresets.js`, `wallpapers.js`, `heroui-theme-presets.css`, `index.css`).
 
+### Cryptographic & E2E Encryption Modules (`frontend/src/lib/crypto/`)
+- `frontend/src/lib/crypto/keypair.js` — Client-side Web Crypto `X25519` keypair generation, canonical 32-byte raw/hex serialization, and PKCS#8 DER private key export/import.
+- `frontend/src/lib/crypto/connect-id.js` — Pure deterministic Connect ID derivation (`TALK-XXXX-XXXX`) using domain-separated SHA-256 and Crockford Base32 encoding.
+- `frontend/src/lib/crypto/storage.js` — Origin-isolated IndexedDB persistence (`talk_crypto_db` / `identity_keys`) for long-term device private keys.
+- `frontend/src/lib/crypto/identity.js` — Idempotent device identity management, memory caching, and fingerprint-free device matching.
+- `frontend/src/lib/crypto/binding.js` — Proof-of-Possession (PoP) generation using ephemeral Diffie-Hellman + domain-separated HMAC-SHA256 (`TALK-IDENTITY-BINDING-V1:`).
+- `frontend/src/lib/crypto/errors.js` — Structured cryptographic error taxonomy with classification and UI safety.
+- `frontend/src/lib/crypto/e2e/constants.js` — Feature 2 protocol constants, algorithms (`X25519`, `Ed25519`, `AES-GCM`, `HKDF-SHA-256`), domain separation tags, and bounds.
+- `frontend/src/lib/crypto/e2e/envelope.js` — Ciphertext envelope construction, Associated Data (AD) canonical serialization, envelope schema validation, and zero-secret assertion guards (`assertNoSecretMaterial`).
+- `frontend/src/lib/crypto/e2e/types.js` — Prekey bundle structural validators and canonical signable byte generators.
+- `frontend/src/lib/crypto/e2e/storage.js` — Origin-isolated IndexedDB persistence for $IK_{sign}$, Signed Prekeys ($SPK$), and One-Time Prekey pools ($OPK$).
+- `frontend/src/lib/crypto/e2e/prekeys.js` — Client-side prekey manager for Ed25519 signing, verification, and OPK batch generation.
+- `frontend/src/lib/api/prekey.js` — Client API service for prekey registration, atomic bundle retrieval, and replenishment.
+
 ## Storage Model
 
 ```mermaid
 erDiagram
     USER ||--o{ MESSAGE : "sends (senderId)"
     USER ||--o{ MESSAGE : "receives (receiverId)"
+    USER ||--o{ DEVICE_IDENTITY : "owns (1:N)"
+    DEVICE_IDENTITY ||--o| PREKEY_BUNDLE : "publishes (1:1)"
 
     USER {
         ObjectId _id PK
@@ -82,13 +98,38 @@ erDiagram
         date updatedAt
     }
 
+    DEVICE_IDENTITY {
+        ObjectId _id PK
+        ObjectId userId FK "Ref User"
+        string connectId UK "Indexed, TALK-XXXX-XXXX"
+        string publicKey UK "64 hex chars X25519"
+        string status "ACTIVE | REVOKED"
+        date boundAt
+        date lastVerifiedAt
+        date revokedAt
+    }
+
+    PREKEY_BUNDLE {
+        ObjectId _id PK
+        ObjectId deviceId FK "Ref DeviceIdentity, unique"
+        ObjectId userId FK "Ref User"
+        string connectId UK "Indexed"
+        string identityKeyDh "64 hex chars X25519"
+        string identityKeySign "64 hex chars Ed25519"
+        object signedPrekey "keyId, publicKey, signature, createdAt"
+        array oneTimePrekeys "keyId, publicKey, isConsumed, consumedAt, consumptionId"
+        number activeOpkCount "Indexed"
+        number protocolVersion
+    }
+
     MESSAGE {
         ObjectId _id PK
         ObjectId senderId FK "Ref User"
         ObjectId receiverId FK "Ref User"
-        string text "Optional text payload"
+        string text "Optional text payload (legacy plaintext)"
         string image "Optional ImageKit URL"
         string video "Optional ImageKit URL"
+        object e2eEnvelope "Future E2EE Ciphertext Envelope (ADR-010)"
         date createdAt "Indexed for chronological sort"
         date updatedAt
     }
@@ -96,6 +137,8 @@ erDiagram
 
 - **MongoDB (Persistent Operational Store)**:
   - `users` collection: Mirrors Clerk identities with unique `clerkId` and `email` indexes.
+  - `deviceidentities` collection: Stores $1:N$ public-key device records with compound `{ userId, status }` and unique `connectId`/`publicKey` indexes.
+  - `prekeybundles` collection: Stores public prekey bundles with unique `deviceId`, atomic OPK tracking, and signature metadata.
   - `messages` collection: Stores 1-on-1 messages with `senderId` and `receiverId` ObjectIds referencing `users`.
 - **ImageKit (External Blob Storage & CDN)**:
   - Stores binary image and video files uploaded via Multer in `/chat` folder.
@@ -107,6 +150,8 @@ erDiagram
   - `theme-preset`: Accent theme identifier string (e.g. `"netflix"`, `"spotify"`)
   - `chat-wallpaper-id`: Wallpaper identifier (e.g. `"sonoma-horizon"`)
   - `imessage-storage`: Zustand persisted state for sound toggle (`isSoundEnabled`).
+- **Client IndexedDB (`talk_crypto_db` / `identity_keys`)**:
+  - `device_identity_keypair`: Origin-isolated asymmetric keypair storage for device identity.
 
 ## Auth and Access Model
 
@@ -131,9 +176,11 @@ erDiagram
 
 ## Invariants
 
-1. **Strict Auth Gate**: Unauthenticated requests must never access protected API endpoints under `/api/messages/*` or `/api/auth/check`.
+1. **Strict Auth Gate**: Unauthenticated requests must never access protected API endpoints under `/api/messages/*`, `/api/identity/*`, or `/api/auth/check`.
 2. **Server-Enforced Sender Identity**: The sender of any persisted message is always derived from `req.user._id` populated by server-side Clerk verification; client input for `senderId` must never be trusted.
-3. **Zero Secret Leakage**: `CLERK_SECRET_KEY`, `IMAGEKIT_PRIVATE_KEY`, and `CLERK_WEBHOOK_SIGNING_SECRET` must strictly remain on the backend and never be bundled into client builds or exposed via API responses.
+3. **Zero Secret Leakage**: `CLERK_SECRET_KEY`, `IMAGEKIT_PRIVATE_KEY`, and `CLERK_WEBHOOK_SIGNING_SECRET` must strictly remain on the backend. Private cryptographic keys ($IK_{dh}, IK_{sign}, SPK_{priv}, OPK_{priv}$), root keys, chain keys, and message keys must strictly remain in client-side memory/IndexedDB and never be transmitted over network or serialized in envelopes/logs.
 4. **Verified Webhooks**: Webhook events from Clerk must always be cryptographically validated with `@clerk/backend/webhooks` against `CLERK_WEBHOOK_SIGNING_SECRET` before modifying user records.
 5. **Private Data Isolation**: Private credentials (such as `clerkId`) must be projected out (`select("-clerkId")` / `$project: { clerkId: 0 }`) when exposing user records to peer clients.
 6. **Stateless HTTP Server**: REST API request handlers must not depend on transient socket state to persist data; messages are committed to MongoDB before any Socket.io event emission.
+7. **AEAD Integrity Invariant**: All E2E ciphertext envelopes must authenticate routing and ratchet header metadata via `AES-256-GCM` Associated Data (AD) before acceptance by recipient client.
+
