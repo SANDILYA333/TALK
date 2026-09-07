@@ -9,14 +9,17 @@
  */
 
 export class CryptographicError extends Error {
-  constructor({
-    message,
-    code = "CRYPTO_ERROR",
-    cause = null,
-    isTransient = false,
-    severity = "ERROR",
-    userMessage = "A cryptographic security operation could not be completed.",
-  }) {
+  constructor(options = {}) {
+    const opts = typeof options === "string" ? { message: options } : options;
+    const {
+      message = "Cryptographic operation failed",
+      code = "CRYPTO_ERROR",
+      cause = null,
+      isTransient = false,
+      severity = "ERROR",
+      userMessage = "A cryptographic security operation could not be completed.",
+    } = opts || {};
+
     super(typeof message === "string" ? message : "Cryptographic operation failed");
     this.name = "CryptographicError";
     this.code = code;
