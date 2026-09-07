@@ -259,7 +259,7 @@ export async function getPrekeyBundle(req, res) {
     }
 
     // Atomic Step: Find unconsumed OPK and mark it as consumed in one atomic operation
-    const consumeTime = new Date();
+    const consumptionId = crypto.randomUUID();
     let consumedOpk = null;
 
     const bundleWithConsumedOpk = await PreKeyBundle.findOneAndUpdate(
@@ -270,7 +270,8 @@ export async function getPrekeyBundle(req, res) {
       {
         $set: {
           "oneTimePrekeys.$.isConsumed": true,
-          "oneTimePrekeys.$.consumedAt": consumeTime,
+          "oneTimePrekeys.$.consumedAt": new Date(),
+          "oneTimePrekeys.$.consumptionId": consumptionId,
         },
         $inc: { activeOpkCount: -1 },
       },
@@ -280,14 +281,9 @@ export async function getPrekeyBundle(req, res) {
     let finalBundle = bundleWithConsumedOpk;
 
     if (bundleWithConsumedOpk) {
-      // Find the OPK that was just consumed at consumeTime
       consumedOpk = bundleWithConsumedOpk.oneTimePrekeys.find(
-        (k) => k.consumedAt && Math.abs(k.consumedAt.getTime() - consumeTime.getTime()) < 50
+        (k) => k.consumptionId === consumptionId
       );
-      if (!consumedOpk) {
-        // Fallback: take the last consumed OPK
-        consumedOpk = bundleWithConsumedOpk.oneTimePrekeys.filter((k) => k.isConsumed).pop();
-      }
     } else {
       // OPK pool exhausted: retrieve base bundle without OPK
       finalBundle = await PreKeyBundle.findOne({ deviceId: device._id });
