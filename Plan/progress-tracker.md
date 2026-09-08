@@ -7,13 +7,23 @@ Update this file after every meaningful implementation change.
 - **FEATURE 2: END-TO-END ENCRYPTED MESSAGING (SIGNAL PROTOCOL / DOUBLE RATCHET)**
 - **Phase 1 Complete: Cryptographic Architecture, Threat Model & Protocol Foundation**
 - **Phase 2 Complete: Pre-Key Infrastructure (Client Generation, Storage, Server Registry & Atomic Consumption)**
-- **Next: Feature 2 — Phase 3: X3DH Session Establishment & Master Secret Agreement**
+- **Phase 3 Complete: X3DH Session Establishment & Master Secret Agreement**
+- **Next: Feature 2 — Phase 4: Double Ratchet State Machine (DH Ratchet & Symmetric KDF Chain Ratchet)**
 
 ## Current Goal
 
-- Feature 2 has completed Phase 1 (Architecture & Foundation) and Phase 2 (Pre-Key Infrastructure). Client devices generate and persist Ed25519 signing keys, Signed Prekeys, and One-Time Prekey pools locally in IndexedDB, and publish public bundles to the server registry. The backend validates Ed25519 signatures, enforces IDOR boundaries, and provides atomic, single-use OPK consumption. The codebase is fully prepared for Phase 3 (X3DH Session Establishment).
+- Feature 2 has completed Phase 1 (Architecture & Foundation), Phase 2 (Pre-Key Infrastructure), and Phase 3 (X3DH Session Establishment & Master Secret Agreement). Clients asynchronously establish mutually authenticated, forward-secure cryptographic sessions using Quadruple-DH (with Triple-DH fallback), derive deterministic master secrets and root keys via HKDF-SHA-256, immediately erase consumed One-Time Prekeys, and persist session states in origin-isolated IndexedDB storage. The codebase is fully prepared for Phase 4 (Double Ratchet State Machine).
 
 ## Completed
+
+- **Feature 2 — Phase 3: X3DH Session Establishment & Master Secret Agreement**:
+  - Implemented client-side X3DH protocol engine in [`frontend/src/lib/crypto/e2e/x3dh.js`](file:///home/kafka/Coding/Web_Dev/Projects/Real%20Time%20Chat%20Application/Real-Time-Chat-Application/frontend/src/lib/crypto/e2e/x3dh.js) implementing Quadruple-DH ($4\text{-DH}$) with Triple-DH ($3\text{-DH}$) fallback, SPK signature verification, and HKDF-SHA-256 key derivation (`TALK-X3DH-V1:MASTER-SECRET`, `TALK-X3DH-V1:ROOT-AGREEMENT`).
+  - Implemented single-use OPK deletion guarantee on receiver device during initial handshake reception.
+  - Implemented cryptographic session persistence engine in [`frontend/src/lib/crypto/e2e/session-storage.js`](file:///home/kafka/Coding/Web_Dev/Projects/Real%20Time%20Chat%20Application/Real-Time-Chat-Application/frontend/src/lib/crypto/e2e/session-storage.js) with indexed lookup by `sessionId` and `peerConnectId`, with memory fallback for test execution.
+  - Implemented high-level session manager in [`frontend/src/lib/crypto/e2e/session.js`](file:///home/kafka/Coding/Web_Dev/Projects/Real%20Time%20Chat%20Application/Real-Time-Chat-Application/frontend/src/lib/crypto/e2e/session.js) coordinating bundle retrieval, initiation, incoming handshake processing, and cached session reuse.
+  - Published ADR-012 ([`Learning/12-architecture-decisions/ADR-012-x3dh-session-establishment-and-secret-agreement.md`](file:///home/kafka/Coding/Web_Dev/Projects/Real%20Time%20Chat%20Application/Real-Time-Chat-Application/Learning/12-architecture-decisions/ADR-012-x3dh-session-establishment-and-secret-agreement.md)) and conceptual learning guide in [`Learning/06-end-to-end-encryption/03-x3dh-handshake-and-key-derivation.md`](file:///home/kafka/Coding/Web_Dev/Projects/Real%20Time%20Chat%20Application/Real-Time-Chat-Application/Learning/06-end-to-end-encryption/03-x3dh-handshake-and-key-derivation.md).
+  - 162 automated tests passing across backend (72 tests) and frontend (90 tests) with 0 lint warnings and clean production builds.
+
 
 - **Feature 2 — Phase 2: Pre-Key Infrastructure (Client Generation, Storage, Server Registry & Atomic Consumption)**:
   - Implemented dedicated Mongoose model [`backend/src/models/prekey.model.js`](file:///home/kafka/Coding/Web_Dev/Projects/Real%20Time%20Chat%20Application/Real-Time-Chat-Application/backend/src/models/prekey.model.js) (`PreKeyBundle`) preserving Feature 1 `DeviceIdentity` contract freeze.
