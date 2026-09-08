@@ -8,13 +8,26 @@ Update this file after every meaningful implementation change.
 - **Phase 1 Complete: Cryptographic Architecture, Threat Model & Protocol Foundation**
 - **Phase 2 Complete: Pre-Key Infrastructure (Client Generation, Storage, Server Registry & Atomic Consumption)**
 - **Phase 3 Complete: X3DH Session Establishment & Master Secret Agreement**
-- **Next: Feature 2 — Phase 4: Double Ratchet State Machine (DH Ratchet & Symmetric KDF Chain Ratchet)**
+- **Phase 4 Complete: Double Ratchet Core (DH Ratchet & Symmetric KDF Chain Ratchet)**
+- **Next: Feature 2 — Phase 5: Message Encryption & Decryption (AES-GCM AEAD integration with Double Ratchet)**
 
 ## Current Goal
 
-- Feature 2 has completed Phase 1 (Architecture & Foundation), Phase 2 (Pre-Key Infrastructure), and Phase 3 (X3DH Session Establishment & Master Secret Agreement). Clients asynchronously establish mutually authenticated, forward-secure cryptographic sessions using Quadruple-DH (with Triple-DH fallback), derive deterministic master secrets and root keys via HKDF-SHA-256, immediately erase consumed One-Time Prekeys, and persist session states in origin-isolated IndexedDB storage. The codebase is fully prepared for Phase 4 (Double Ratchet State Machine).
+- Feature 2 has completed Phase 1–4. The Double Ratchet state machine is fully operational: it derives unique message keys via KDF_RK (DH ratchet) and KDF_CK (symmetric ratchet), supports out-of-order message delivery with bounded skipped-key caching, provides forward secrecy and break-in recovery, and has been verified with 33 tests across 7 test groups. The codebase is ready for Phase 5 (AES-GCM message encryption/decryption integrating the ratchet with the envelope layer).
 
 ## Completed
+
+- **Feature 2 — Phase 4: Double Ratchet Core**:
+  - Implemented the complete Double Ratchet state machine in [`frontend/src/lib/crypto/e2e/ratchet.js`](file:///home/kafka/Coding/Web_Dev/Projects/Real%20Time%20Chat%20Application/Real-Time-Chat-Application/frontend/src/lib/crypto/e2e/ratchet.js).
+  - `KDF_RK(RK, DH_output)` — HKDF-SHA-256 with current Root Key as salt, producing new Root Key and Chain Key (`TALK-DOUBLE-RATCHET-V1:ROOT-KDF`, `TALK-DOUBLE-RATCHET-V1:CHAIN-KDF`).
+  - `KDF_CK(CK)` — HKDF-SHA-256 with zero salt, producing new Chain Key and unique Message Key (`TALK-DOUBLE-RATCHET-V1:CHAIN-KDF`, `TALK-DOUBLE-RATCHET-V1:MESSAGE-KEY`).
+  - `initSenderRatchet()` — initializer-side state: performs initial DH step, establishes sending chain immediately.
+  - `initReceiverRatchet()` — receiver-side state: stores root key, defers chain derivation until first message.
+  - `ratchetEncrypt()` — advances sending chain via KDF_CK, returns `messageKeyHex` and `header`.
+  - `ratchetDecrypt()` — DH ratchet step on new peer key, skipped-key cache lookup, and chain advancement.
+  - Out-of-order delivery: bounded skipped-key cache (`MAX_SKIPPED_MESSAGE_KEYS = 1000`, TTL = 7 days).
+  - Published ADR-013 ([`Learning/12-architecture-decisions/ADR-013-double-ratchet-state-machine.md`](file:///home/kafka/Coding/Web_Dev/Projects/Real%20Time%20Chat%20Application/Real-Time-Chat-Application/Learning/12-architecture-decisions/ADR-013-double-ratchet-state-machine.md)) and learning guide ([`Learning/06-end-to-end-encryption/04-double-ratchet-key-evolution.md`](file:///home/kafka/Coding/Web_Dev/Projects/Real%20Time%20Chat%20Application/Real-Time-Chat-Application/Learning/06-end-to-end-encryption/04-double-ratchet-key-evolution.md)).
+  - 123 automated tests passing across frontend (123 tests, +33 new for Phase 4) with 0 lint warnings and clean production build.
 
 - **Feature 2 — Phase 3: X3DH Session Establishment & Master Secret Agreement**:
   - Implemented client-side X3DH protocol engine in [`frontend/src/lib/crypto/e2e/x3dh.js`](file:///home/kafka/Coding/Web_Dev/Projects/Real%20Time%20Chat%20Application/Real-Time-Chat-Application/frontend/src/lib/crypto/e2e/x3dh.js) implementing Quadruple-DH ($4\text{-DH}$) with Triple-DH ($3\text{-DH}$) fallback, SPK signature verification, and HKDF-SHA-256 key derivation (`TALK-X3DH-V1:MASTER-SECRET`, `TALK-X3DH-V1:ROOT-AGREEMENT`).
