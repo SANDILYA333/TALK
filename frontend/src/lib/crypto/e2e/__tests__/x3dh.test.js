@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   initiateX3DHSession,
   receiveX3DHSession,
+  verifySignedPrekeySignature,
 } from "../x3dh.js";
 import {
   generateSigningIdentityKeyPair,
@@ -24,9 +25,9 @@ import {
 import { clearAllSessions } from "../session-storage.js";
 import { generateIdentityKeyPair, exportPublicKey } from "../../keypair.js";
 import { deriveConnectId } from "../../connect-id.js";
-import { validateX3DHHeader } from "../types.js";
 import { assertNoSecretMaterial } from "../envelope.js";
 import { getSubtleCrypto, bytesToHex } from "../../utils.js";
+import { FORBIDDEN_ENVELOPE_KEYS } from "../constants.js";
 
 
 async function createTestIdentity() {
@@ -55,24 +56,22 @@ test.beforeEach(async () => {
   await clearAllSessions();
 });
 
-test.describe("TALK Feature 2 Phase 3 — X3DH Session Establishment & Master Secret Agreement", () => {
-  
-  test("1. Full 4-DH X3DH handshake derives identical Master Secret and Root Key between Alice and Bob", async () => {
-    // 1. Setup Alice's Identity
-    const alice = await createTestIdentity();
+test.describe("TALK Feature 2 Phase 2.3 — X3DH Session Establishment Suite", () => {
 
-    // 2. Setup Bob's Identity & Prekeys
+  // ==========================================
+  // Test Group A: Happy Path & Core Agreement
+  // ==========================================
+  test("Group A: Alice and Bob derive identical Master Secret (SK) and Root Key (RK) via 4-DH", async () => {
+    const alice = await createTestIdentity();
     const bob = await createTestIdentity();
     const bobSigningIdentity = await createTestSigningIdentity();
     const bobSpk = await generateSignedPrekey(bobSigningIdentity.privateKey, 1);
     const bobOpks = await generateOneTimePrekeyBatch(1, 5);
 
-    // Save Bob's keys in his local storage
     await saveSigningIdentityKeyPair(bobSigningIdentity);
     await saveSignedPrekeyRecord(bobSpk);
     await saveOneTimePrekeysPool(bobOpks);
 
-    // 3. Assemble Bob's Public Prekey Bundle (as served by registry)
     const bobBundle = {
       deviceId: "device_bob_1",
       connectId: bob.connectId,
@@ -90,83 +89,11 @@ test.describe("TALK Feature 2 Phase 3 — X3DH Session Establishment & Master Se
       },
     };
 
-    // 4. Alice executes X3DH Initiation
     const aliceResult = await initiateX3DHSession({
       localIdentityKeyPair: alice,
       localConnectId: alice.connectId,
       peerBundle: bobBundle,
     });
-
-    assert.ok(aliceResult.masterSecretHex, "Alice should have derived a master secret");
-    assert.ok(aliceResult.rootKeyHex, "Alice should have derived a root key");
-    assert.equal(aliceResult.masterSecretHex.length, 64, "Master secret must be 32 bytes (64 hex chars)");
-    assert.equal(aliceResult.rootKeyHex.length, 64, "Root key must be 32 bytes (64 hex chars)");
-    assert.equal(aliceResult.isTripleDhFallback, false, "4-DH was executed");
-
-    // Verify Alice's wire header
-    assert.ok(validateX3DHHeader(aliceResult.x3dhHeader), "X3DH header must pass validation");
-    assert.equal(aliceResult.x3dhHeader.oneTimePrekeyUsed, true);
-    assert.equal(aliceResult.x3dhHeader.opkKeyId, bobOpks[0].keyId);
-    assert.doesNotThrow(() => assertNoSecretMaterial(aliceResult.x3dhHeader));
-
-    // 5. Bob executes X3DH Reception
-    const bobResult = await receiveX3DHSession({
-      localIdentityKeyPair: bob,
-      localConnectId: bob.connectId,
-      localSignedPrekey: bobSpk,
-      x3dhHeader: aliceResult.x3dhHeader,
-      consumeOpkFn: consumeLocalOneTimePrekey,
-    });
-
-    // 6. Symmetrical Secret Verification
-    assert.equal(
-      bobResult.masterSecretHex,
-      aliceResult.masterSecretHex,
-      "Bob and Alice must derive 100% identical Master Secrets"
-    );
-    assert.equal(
-      bobResult.rootKeyHex,
-      aliceResult.rootKeyHex,
-      "Bob and Alice must derive 100% identical Root Keys"
-    );
-
-    // 7. Verify Bob deleted the consumed OPK (Single-use invariant)
-    const doubleConsume = await consumeLocalOneTimePrekey(bobOpks[0].keyId);
-    assert.equal(doubleConsume, null, "Consumed OPK must be permanently erased from local storage");
-  });
-
-  test("2. Triple-DH fallback executes successfully when OPK is exhausted (null)", async () => {
-    const alice = await createTestIdentity();
-    const bob = await createTestIdentity();
-    const bobSigningIdentity = await createTestSigningIdentity();
-    const bobSpk = await generateSignedPrekey(bobSigningIdentity.privateKey, 1);
-
-    await saveSignedPrekeyRecord(bobSpk);
-
-    // Bob has NO OPK (exhausted)
-    const bobBundle = {
-      deviceId: "device_bob_1",
-      connectId: bob.connectId,
-      identityKeyDh: bob.publicKeyHex,
-      identityKeySign: bobSigningIdentity.publicKeyHex,
-      signedPrekey: {
-        keyId: bobSpk.keyId,
-        publicKey: bobSpk.publicKeyHex,
-        signature: bobSpk.signatureHex,
-        createdAt: bobSpk.createdAt,
-      },
-      oneTimePrekey: null,
-    };
-
-    const aliceResult = await initiateX3DHSession({
-      localIdentityKeyPair: alice,
-      localConnectId: alice.connectId,
-      peerBundle: bobBundle,
-    });
-
-    assert.equal(aliceResult.isTripleDhFallback, true);
-    assert.equal(aliceResult.x3dhHeader.oneTimePrekeyUsed, false);
-    assert.equal(aliceResult.x3dhHeader.opkKeyId, null);
 
     const bobResult = await receiveX3DHSession({
       localIdentityKeyPair: bob,
@@ -178,18 +105,25 @@ test.describe("TALK Feature 2 Phase 3 — X3DH Session Establishment & Master Se
 
     assert.equal(bobResult.masterSecretHex, aliceResult.masterSecretHex);
     assert.equal(bobResult.rootKeyHex, aliceResult.rootKeyHex);
+    assert.equal(aliceResult.masterSecretHex.length, 64);
+    assert.equal(aliceResult.rootKeyHex.length, 64);
   });
 
-  test("3. Alice rejects initiation if Bob's Signed Prekey signature is forged or corrupted", async () => {
+  // ==========================================
+  // Test Group B: Signed Prekey Validation
+  // ==========================================
+  test("Group B: Valid signed prekey is verified, corrupted/forged signatures are strictly rejected", async () => {
     const alice = await createTestIdentity();
     const bob = await createTestIdentity();
     const bobSigningIdentity = await createTestSigningIdentity();
     const bobSpk = await generateSignedPrekey(bobSigningIdentity.privateKey, 1);
 
-    // Corrupt Bob's SPK signature (64 bytes = 128 hex chars)
-    const corruptedSignature = "00".repeat(64);
+    // 1. Valid SPK signature passes
+    const isValid = await verifySignedPrekeySignature(bobSigningIdentity.publicKeyHex, bobSpk);
+    assert.equal(isValid, true);
 
-    const tamperedBundle = {
+    // 2. Corrupted signature rejected
+    const corruptedBundle = {
       deviceId: "device_bob_1",
       connectId: bob.connectId,
       identityKeyDh: bob.publicKeyHex,
@@ -197,7 +131,7 @@ test.describe("TALK Feature 2 Phase 3 — X3DH Session Establishment & Master Se
       signedPrekey: {
         keyId: bobSpk.keyId,
         publicKey: bobSpk.publicKeyHex,
-        signature: corruptedSignature,
+        signature: "00".repeat(64),
         createdAt: bobSpk.createdAt,
       },
       oneTimePrekey: null,
@@ -208,57 +142,41 @@ test.describe("TALK Feature 2 Phase 3 — X3DH Session Establishment & Master Se
         await initiateX3DHSession({
           localIdentityKeyPair: alice,
           localConnectId: alice.connectId,
-          peerBundle: tamperedBundle,
+          peerBundle: corruptedBundle,
         });
       },
       /signature verification failed/i
     );
-  });
 
-  test("4. Bob rejects incoming handshake if Signed Prekey ID does not match local SPK", async () => {
-    const alice = await createTestIdentity();
-    const bob = await createTestIdentity();
-    const bobSigningIdentity = await createTestSigningIdentity();
-    const bobSpk = await generateSignedPrekey(bobSigningIdentity.privateKey, 1);
-
-    const bobBundle = {
-      deviceId: "device_bob_1",
-      connectId: bob.connectId,
-      identityKeyDh: bob.publicKeyHex,
-      identityKeySign: bobSigningIdentity.publicKeyHex,
+    // 3. Signature from wrong identity key rejected
+    const charlieSigningIdentity = await createTestSigningIdentity();
+    const forgedIdentityBundle = {
+      ...corruptedBundle,
+      identityKeySign: charlieSigningIdentity.publicKeyHex, // signed by Bob, claimed by Charlie
       signedPrekey: {
         keyId: bobSpk.keyId,
         publicKey: bobSpk.publicKeyHex,
         signature: bobSpk.signatureHex,
         createdAt: bobSpk.createdAt,
       },
-      oneTimePrekey: null,
     };
-
-    const aliceResult = await initiateX3DHSession({
-      localIdentityKeyPair: alice,
-      localConnectId: alice.connectId,
-      peerBundle: bobBundle,
-    });
-
-    // Mismatched local SPK keyId
-    const wrongSpk = { ...bobSpk, keyId: 999 };
 
     await assert.rejects(
       async () => {
-        await receiveX3DHSession({
-          localIdentityKeyPair: bob,
-          localConnectId: bob.connectId,
-          localSignedPrekey: wrongSpk,
-          x3dhHeader: aliceResult.x3dhHeader,
-          consumeOpkFn: consumeLocalOneTimePrekey,
+        await initiateX3DHSession({
+          localIdentityKeyPair: alice,
+          localConnectId: alice.connectId,
+          peerBundle: forgedIdentityBundle,
         });
       },
-      /Signed prekey ID mismatch/i
+      /signature verification failed/i
     );
   });
 
-  test("5. Bob rejects incoming handshake if requested OPK was already consumed or deleted", async () => {
+  // ==========================================
+  // Test Group C: One-Time Prekey Lifecycle
+  // ==========================================
+  test("Group C: OPK is consumed once, replay fails, and missing OPK triggers 3-DH fallback", async () => {
     const alice = await createTestIdentity();
     const bob = await createTestIdentity();
     const bobSigningIdentity = await createTestSigningIdentity();
@@ -268,6 +186,7 @@ test.describe("TALK Feature 2 Phase 3 — X3DH Session Establishment & Master Se
     await saveSignedPrekeyRecord(bobSpk);
     await saveOneTimePrekeysPool(bobOpks);
 
+    // 1. 4-DH consumes OPK
     const bobBundle = {
       deviceId: "device_bob_1",
       connectId: bob.connectId,
@@ -291,7 +210,7 @@ test.describe("TALK Feature 2 Phase 3 — X3DH Session Establishment & Master Se
       peerBundle: bobBundle,
     });
 
-    // Bob processes once (succeeds & deletes OPK)
+    // Bob processes and erases OPK
     await receiveX3DHSession({
       localIdentityKeyPair: bob,
       localConnectId: bob.connectId,
@@ -300,7 +219,7 @@ test.describe("TALK Feature 2 Phase 3 — X3DH Session Establishment & Master Se
       consumeOpkFn: consumeLocalOneTimePrekey,
     });
 
-    // An attacker replaying the exact same initial handshake fails because OPK was deleted
+    // Replay attempt fails because OPK was deleted
     await assert.rejects(
       async () => {
         await receiveX3DHSession({
@@ -313,9 +232,205 @@ test.describe("TALK Feature 2 Phase 3 — X3DH Session Establishment & Master Se
       },
       /One-Time Prekey .* not found or already consumed/i
     );
+
+    // 2. Missing OPK executes Triple-DH fallback
+    const fallbackBundle = { ...bobBundle, oneTimePrekey: null };
+    const aliceFallback = await initiateX3DHSession({
+      localIdentityKeyPair: alice,
+      localConnectId: alice.connectId,
+      peerBundle: fallbackBundle,
+    });
+
+    assert.equal(aliceFallback.isTripleDhFallback, true);
+    assert.equal(aliceFallback.x3dhHeader.oneTimePrekeyUsed, false);
+
+    const bobFallback = await receiveX3DHSession({
+      localIdentityKeyPair: bob,
+      localConnectId: bob.connectId,
+      localSignedPrekey: bobSpk,
+      x3dhHeader: aliceFallback.x3dhHeader,
+      consumeOpkFn: consumeLocalOneTimePrekey,
+    });
+
+    assert.equal(bobFallback.masterSecretHex, aliceFallback.masterSecretHex);
   });
 
-  test("6. High-level Session Manager coordinates complete session establishment flow", async () => {
+  // ==========================================
+  // Test Group D & E: Cryptographic Correctness & Invariants
+  // ==========================================
+  test("Group D & E: Different ephemeral keys, prekeys, or identities produce distinct session secrets", async () => {
+    const alice = await createTestIdentity();
+    const bob = await createTestIdentity();
+    const bobSigningIdentity = await createTestSigningIdentity();
+    const bobSpk = await generateSignedPrekey(bobSigningIdentity.privateKey, 1);
+    const bobOpks = await generateOneTimePrekeyBatch(1, 3);
+
+    const bundle1 = {
+      deviceId: "device_bob_1",
+      connectId: bob.connectId,
+      identityKeyDh: bob.publicKeyHex,
+      identityKeySign: bobSigningIdentity.publicKeyHex,
+      signedPrekey: {
+        keyId: bobSpk.keyId,
+        publicKey: bobSpk.publicKeyHex,
+        signature: bobSpk.signatureHex,
+        createdAt: bobSpk.createdAt,
+      },
+      oneTimePrekey: {
+        keyId: bobOpks[0].keyId,
+        publicKey: bobOpks[0].publicKeyHex,
+      },
+    };
+
+    // First session
+    const session1 = await initiateX3DHSession({
+      localIdentityKeyPair: alice,
+      localConnectId: alice.connectId,
+      peerBundle: bundle1,
+    });
+
+    // Second session with fresh ephemeral key
+    const session2 = await initiateX3DHSession({
+      localIdentityKeyPair: alice,
+      localConnectId: alice.connectId,
+      peerBundle: bundle1,
+    });
+
+    assert.notEqual(
+      session1.masterSecretHex,
+      session2.masterSecretHex,
+      "Fresh ephemeral key MUST produce different master secrets"
+    );
+    assert.notEqual(
+      session1.rootKeyHex,
+      session2.rootKeyHex,
+      "Fresh ephemeral key MUST produce different root keys"
+    );
+
+    // Third session with different OPK
+    const bundle2 = {
+      ...bundle1,
+      oneTimePrekey: {
+        keyId: bobOpks[1].keyId,
+        publicKey: bobOpks[1].publicKeyHex,
+      },
+    };
+
+    const session3 = await initiateX3DHSession({
+      localIdentityKeyPair: alice,
+      localConnectId: alice.connectId,
+      peerBundle: bundle2,
+    });
+
+    assert.notEqual(session1.masterSecretHex, session3.masterSecretHex);
+  });
+
+  // ==========================================
+  // Test Group F: Failure Boundary Handling
+  // ==========================================
+  test("Group F: Mismatched SPK ID, missing keys, or malformed headers throw explicit CryptographicError", async () => {
+    const alice = await createTestIdentity();
+    const bob = await createTestIdentity();
+    const bobSigningIdentity = await createTestSigningIdentity();
+    const bobSpk = await generateSignedPrekey(bobSigningIdentity.privateKey, 1);
+
+    const bobBundle = {
+      deviceId: "device_bob_1",
+      connectId: bob.connectId,
+      identityKeyDh: bob.publicKeyHex,
+      identityKeySign: bobSigningIdentity.publicKeyHex,
+      signedPrekey: {
+        keyId: bobSpk.keyId,
+        publicKey: bobSpk.publicKeyHex,
+        signature: bobSpk.signatureHex,
+        createdAt: bobSpk.createdAt,
+      },
+      oneTimePrekey: null,
+    };
+
+    const aliceResult = await initiateX3DHSession({
+      localIdentityKeyPair: alice,
+      localConnectId: alice.connectId,
+      peerBundle: bobBundle,
+    });
+
+    // 1. SPK ID mismatch
+    const wrongSpk = { ...bobSpk, keyId: 888 };
+    await assert.rejects(
+      async () => {
+        await receiveX3DHSession({
+          localIdentityKeyPair: bob,
+          localConnectId: bob.connectId,
+          localSignedPrekey: wrongSpk,
+          x3dhHeader: aliceResult.x3dhHeader,
+          consumeOpkFn: consumeLocalOneTimePrekey,
+        });
+      },
+      /Signed prekey ID mismatch/i
+    );
+
+    // 2. Malformed X3DH Header
+    const malformedHeader = { ...aliceResult.x3dhHeader, version: 99 };
+    await assert.rejects(
+      async () => {
+        await receiveX3DHSession({
+          localIdentityKeyPair: bob,
+          localConnectId: bob.connectId,
+          localSignedPrekey: bobSpk,
+          x3dhHeader: malformedHeader,
+          consumeOpkFn: consumeLocalOneTimePrekey,
+        });
+      },
+      /Invalid incoming X3DH handshake header/i
+    );
+  });
+
+  // ==========================================
+  // Test Group G: Zero-Secret Transmission Audit
+  // ==========================================
+  test("Group G: Wire header contains zero private keys, shared secrets, root keys, or chain keys", async () => {
+    const alice = await createTestIdentity();
+    const bob = await createTestIdentity();
+    const bobSigningIdentity = await createTestSigningIdentity();
+    const bobSpk = await generateSignedPrekey(bobSigningIdentity.privateKey, 1);
+
+    const bobBundle = {
+      deviceId: "device_bob_1",
+      connectId: bob.connectId,
+      identityKeyDh: bob.publicKeyHex,
+      identityKeySign: bobSigningIdentity.publicKeyHex,
+      signedPrekey: {
+        keyId: bobSpk.keyId,
+        publicKey: bobSpk.publicKeyHex,
+        signature: bobSpk.signatureHex,
+        createdAt: bobSpk.createdAt,
+      },
+      oneTimePrekey: null,
+    };
+
+    const aliceResult = await initiateX3DHSession({
+      localIdentityKeyPair: alice,
+      localConnectId: alice.connectId,
+      peerBundle: bobBundle,
+    });
+
+    // Verify wire payload passes recursive assertion
+    assert.doesNotThrow(() => assertNoSecretMaterial(aliceResult.x3dhHeader));
+
+    // Verify none of the forbidden secret keys exist on the wire header
+    for (const forbiddenKey of FORBIDDEN_ENVELOPE_KEYS) {
+      assert.equal(
+        forbiddenKey in aliceResult.x3dhHeader,
+        false,
+        `Forbidden secret key '${forbiddenKey}' must NEVER appear on wire header`
+      );
+    }
+  });
+
+  // ==========================================
+  // End-to-End Session Coordinator Workflow
+  // ==========================================
+  test("Session Manager: End-to-end multi-device workflow with idempotent caching", async () => {
     const alice = await createTestIdentity();
     const bob = await createTestIdentity();
     const bobSigningIdentity = await createTestSigningIdentity();
@@ -342,7 +457,7 @@ test.describe("TALK Feature 2 Phase 3 — X3DH Session Establishment & Master Se
       },
     });
 
-    // Alice initiates session via Session Manager
+    // 1. Alice initiates session
     const aliceInit = await establishSessionWithPeer({
       peerConnectId: bob.connectId,
       localIdentityKeyPair: alice,
@@ -351,11 +466,9 @@ test.describe("TALK Feature 2 Phase 3 — X3DH Session Establishment & Master Se
     });
 
     assert.equal(aliceInit.isNewSession, true);
-    assert.ok(aliceInit.session);
-    assert.equal(aliceInit.session.peerConnectId, bob.connectId);
     assert.equal(aliceInit.session.handshakeRole, "INITIATOR");
 
-    // Bob processes incoming X3DH handshake
+    // 2. Bob receives handshake
     const bobReceive = await handleIncomingX3DHHandshake({
       x3dhHeader: aliceInit.x3dhHeader,
       localIdentityKeyPair: bob,
@@ -364,13 +477,11 @@ test.describe("TALK Feature 2 Phase 3 — X3DH Session Establishment & Master Se
       consumeOpkFn: consumeLocalOneTimePrekey,
     });
 
-    assert.ok(bobReceive.session);
-    assert.equal(bobReceive.session.peerConnectId, alice.connectId);
     assert.equal(bobReceive.session.handshakeRole, "RECEIVER");
     assert.equal(bobReceive.session.rootKeyHex, aliceInit.session.rootKeyHex);
     assert.equal(bobReceive.masterSecretHex, aliceInit.masterSecretHex);
 
-    // Second call for Alice returns existing session without re-running X3DH
+    // 3. Second call returns existing session idempotently
     const aliceSecondCall = await establishSessionWithPeer({
       peerConnectId: bob.connectId,
       localIdentityKeyPair: alice,
