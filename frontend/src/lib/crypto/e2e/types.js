@@ -109,3 +109,43 @@ export function buildSignedPrekeySignableBytes(keyId, publicKey) {
 
   return result;
 }
+
+/**
+ * Validates the structure of an X3DH Handshake Header transmitted on the wire.
+ * 
+ * @param {object} header
+ * @returns {boolean}
+ */
+export function validateX3DHHeader(header) {
+  if (!header || typeof header !== "object") return false;
+  if (header.version !== 1) return false;
+  if (typeof header.senderConnectId !== "string" || !header.senderConnectId.startsWith("TALK-")) return false;
+  if (!isHexOfByteLength(header.senderIdentityKeyDh, X25519_PUBLIC_KEY_SIZE)) return false;
+  if (!isHexOfByteLength(header.ephemeralPublicKey, X25519_PUBLIC_KEY_SIZE)) return false;
+  if (typeof header.spkKeyId !== "number" || header.spkKeyId < 0) return false;
+  if (typeof header.oneTimePrekeyUsed !== "boolean") return false;
+  if (header.oneTimePrekeyUsed) {
+    if (typeof header.opkKeyId !== "number" || header.opkKeyId < 0) return false;
+  } else {
+    if (header.opkKeyId !== null && header.opkKeyId !== undefined) return false;
+  }
+  return true;
+}
+
+/**
+ * Validates the structure of an active Session Record in storage.
+ * 
+ * @param {object} record
+ * @returns {boolean}
+ */
+export function validateSessionRecord(record) {
+  if (!record || typeof record !== "object") return false;
+  if (!record.sessionId || typeof record.sessionId !== "string") return false;
+  if (!record.peerConnectId || typeof record.peerConnectId !== "string") return false;
+  if (!isHexOfByteLength(record.peerIdentityKeyDh, X25519_PUBLIC_KEY_SIZE)) return false;
+  if (!isHexOfByteLength(record.rootKeyHex, 32)) return false;
+  if (!["INITIATOR", "RECEIVER"].includes(record.handshakeRole)) return false;
+  if (!["ESTABLISHED", "ACTIVE", "EXPIRED"].includes(record.status)) return false;
+  return true;
+}
+
