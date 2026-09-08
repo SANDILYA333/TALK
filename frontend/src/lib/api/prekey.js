@@ -71,6 +71,9 @@ export async function fetchPeerPrekeyBundle(connectId) {
   }
 }
 
+export const fetchPrekeyBundleByConnectId = fetchPeerPrekeyBundle;
+
+
 /**
  * Replenishes One-Time Prekeys for the active device on the server.
  * 
