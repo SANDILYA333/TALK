@@ -113,11 +113,16 @@ export async function importEd25519PublicKey(publicKey) {
 export async function verifySignedPrekeySignature(identityKeySignHex, signedPrekey) {
   try {
     const signingKey = await importEd25519PublicKey(identityKeySignHex);
-    const signableBytes = buildSignedPrekeySignableBytes(
-      signedPrekey.keyId,
-      signedPrekey.publicKey
-    );
-    const signatureBytes = hexToBytes(signedPrekey.signature);
+    const keyId = signedPrekey.keyId;
+    const publicKey = signedPrekey.publicKeyHex || signedPrekey.publicKey;
+    const signatureHex = signedPrekey.signature || signedPrekey.signatureHex;
+
+    if (!signatureHex) {
+      return false;
+    }
+
+    const signableBytes = buildSignedPrekeySignableBytes(keyId, publicKey);
+    const signatureBytes = hexToBytes(signatureHex);
     const subtle = getSubtleCrypto();
 
     return subtle.verify(
@@ -130,6 +135,7 @@ export async function verifySignedPrekeySignature(identityKeySignHex, signedPrek
     throw new CryptographicError("Failed to verify Signed Prekey signature", err);
   }
 }
+
 
 /**
  * Derives the Master Shared Secret (SK) and initial Root Key (RK) from the concatenated DH outputs.
