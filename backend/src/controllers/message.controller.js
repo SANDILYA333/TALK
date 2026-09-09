@@ -2,6 +2,96 @@ import User from "../models/user.model.js";
 import Message from "../models/message.model.js";
 import { hasImageKitConfig, uploadChatMedia } from "../lib/imagekit.js";
 import { getReceiverSocketId, io } from "../lib/socket.js";
+import { logger } from "../lib/logger.js";
+
+/**
+ * Validates the structure and sanity of an incoming ciphertext envelope on the server.
+ * Ensures strict typing, length caps, and zero presence of forbidden secret field names.
+ *
+ * @param {object} envelope
+ * @returns {boolean}
+ */
+export function validateEncryptedEnvelopePayload(envelope) {
+  if (!envelope || typeof envelope !== "object") return false;
+  if (typeof envelope.version !== "number" || envelope.version !== 1) return false;
+  if (
+    typeof envelope.sessionId !== "string" ||
+    envelope.sessionId.length === 0 ||
+    envelope.sessionId.length > 100
+  ) {
+    return false;
+  }
+  if (
+    typeof envelope.senderDeviceId !== "string" ||
+    envelope.senderDeviceId.length === 0 ||
+    envelope.senderDeviceId.length > 50
+  ) {
+    return false;
+  }
+  if (
+    typeof envelope.recipientDeviceId !== "string" ||
+    envelope.recipientDeviceId.length === 0 ||
+    envelope.recipientDeviceId.length > 50
+  ) {
+    return false;
+  }
+  if (!["whisper", "prekey_init"].includes(envelope.messageType)) return false;
+
+  const header = envelope.ratchetHeader;
+  if (!header || typeof header !== "object") return false;
+  if (
+    typeof header.dhRatchetPublicKey !== "string" ||
+    header.dhRatchetPublicKey.length !== 64 ||
+    !/^[0-9a-fA-F]+$/.test(header.dhRatchetPublicKey)
+  ) {
+    return false;
+  }
+  if (
+    typeof header.messageNumber !== "number" ||
+    header.messageNumber < 0 ||
+    !Number.isInteger(header.messageNumber)
+  ) {
+    return false;
+  }
+  if (
+    typeof header.previousChainLength !== "number" ||
+    header.previousChainLength < 0 ||
+    !Number.isInteger(header.previousChainLength)
+  ) {
+    return false;
+  }
+
+  // Size constraints: ciphertext max 64KB (131072 hex characters), 12-byte IV (24 hex chars)
+  if (
+    typeof envelope.ciphertext !== "string" ||
+    envelope.ciphertext.length === 0 ||
+    envelope.ciphertext.length > 131072 ||
+    !/^[0-9a-fA-F]+$/.test(envelope.ciphertext)
+  ) {
+    return false;
+  }
+  if (
+    typeof envelope.iv !== "string" ||
+    envelope.iv.length !== 24 ||
+    !/^[0-9a-fA-F]+$/.test(envelope.iv)
+  ) {
+    return false;
+  }
+
+  // Enforce zero secret properties in envelope or x3dhInit
+  const forbidden = ["privatekey", "secret", "rootkey", "chainkey", "messagekey", "mastersecret"];
+  const checkSecrets = (obj) => {
+    if (!obj || typeof obj !== "object") return true;
+    for (const key of Object.keys(obj)) {
+      const lower = key.toLowerCase();
+      if (forbidden.some((f) => lower.includes(f))) return false;
+      if (typeof obj[key] === "object" && !checkSecrets(obj[key])) return false;
+    }
+    return true;
+  };
+
+  return checkSecrets(envelope);
+}
 
 export async function getUsersForSidebar(req, res) {
   try {
@@ -13,7 +103,9 @@ export async function getUsersForSidebar(req, res) {
 
     res.status(200).json(filteredUsers);
   } catch (error) {
-    console.error("Error in getUsersForSidebar:", error.message);
+    logger.error("get_users_for_sidebar_failed", "Error in getUsersForSidebar", {
+      error: error.message,
+    });
     res.status(500).json({ message: "Internal server error" });
   }
 }
@@ -62,7 +154,9 @@ export async function getConversationsForSidebar(req, res) {
 
     res.status(200).json(conversations);
   } catch (error) {
-    console.error("Error in getConversationsForSidebar:", error.message);
+    logger.error("get_conversations_for_sidebar_failed", "Error in getConversationsForSidebar", {
+      error: error.message,
+    });
     res.status(500).json({ message: "Internal server error" });
   }
 }
@@ -81,16 +175,24 @@ export async function getMessages(req, res) {
 
     res.status(200).json(messages);
   } catch (error) {
-    console.error("Error in getMessages:", error.message);
+    logger.error("get_messages_failed", "Error in getMessages", {
+      error: error.message,
+    });
     res.status(500).json({ message: "Internal server error" });
   }
 }
 
 export async function sendMessage(req, res) {
   try {
-    const { text } = req.body;
+    const { text, encryptedEnvelope } = req.body;
     const { id: receiverId } = req.params;
     const senderId = req.user._id;
+
+    // Verify recipient user exists
+    const recipientUser = await User.findById(receiverId);
+    if (!recipientUser) {
+      return res.status(404).json({ message: "Recipient user not found" });
+    }
 
     let imageUrl;
     let videoUrl;
@@ -107,10 +209,25 @@ export async function sendMessage(req, res) {
       else imageUrl = url;
     }
 
+    // Validate payload: must contain encryptedEnvelope, text, or media
+    if (!encryptedEnvelope && !text && !imageUrl && !videoUrl) {
+      return res.status(400).json({ message: "Message content or encrypted envelope is required" });
+    }
+
+    // If encryptedEnvelope is provided, strictly validate its structure
+    if (encryptedEnvelope) {
+      const isValidEnvelope = validateEncryptedEnvelopePayload(encryptedEnvelope);
+      if (!isValidEnvelope) {
+        return res.status(400).json({ message: "Invalid encrypted message envelope" });
+      }
+    }
+
     const newMessage = new Message({
       senderId,
       receiverId,
-      text,
+      // Zero-plaintext guarantee: when encryptedEnvelope is present, text is stored as null
+      encryptedEnvelope: encryptedEnvelope || null,
+      text: encryptedEnvelope ? null : text || null,
       image: imageUrl,
       video: videoUrl,
     });
@@ -118,14 +235,16 @@ export async function sendMessage(req, res) {
     await newMessage.save();
 
     const receiverSocketId = getReceiverSocketId(receiverId);
-    // only send the message in realtime if user is online
+    // Real-time broadcast of ciphertext envelope to online recipient
     if (receiverSocketId) {
       io.to(receiverSocketId).emit("newMessage", newMessage);
     }
 
     res.status(201).json(newMessage);
   } catch (error) {
-    console.error("Error in sendMessage:", error.message);
+    logger.error("send_message_failed", "Error in sendMessage", {
+      error: error.message,
+    });
     res.status(500).json({ message: "Internal server error" });
   }
 }
