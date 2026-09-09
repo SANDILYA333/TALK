@@ -1,10 +1,16 @@
 import { create } from "zustand";
-import { axiosInstance } from "../lib/axios";
+import { axiosInstance } from "../lib/axios.js";
 import { io } from "socket.io-client";
-import { getOrCreateDeviceIdentity, getDeviceConnectId } from "../lib/crypto/identity";
-import { bindDeviceIdentityWithBackend } from "../lib/api/identity";
+import { getOrCreateDeviceIdentity, getDeviceConnectId } from "../lib/crypto/identity.js";
+import { bindDeviceIdentityWithBackend } from "../lib/api/identity.js";
+import { getOrCreateDevicePrekeys } from "../lib/crypto/e2e/prekeys.js";
+import { registerPrekeyBundleWithBackend } from "../lib/api/prekey.js";
+import { useChatStore } from "./useChatStore.js";
 
-const BASE_URL = import.meta.env.MODE === "development" ? "http://localhost:3000" : "/";
+const BASE_URL =
+  typeof import.meta !== "undefined" && import.meta.env?.MODE === "development"
+    ? "http://localhost:3000"
+    : "/";
 
 export const useAuthStore = create((set, get) => ({
   authUser: null,
@@ -26,10 +32,14 @@ export const useAuthStore = create((set, get) => ({
       // Step 2: Perform automated cryptographic Proof-of-Possession binding with the backend
       const bindResult = await bindDeviceIdentityWithBackend();
       if (bindResult?.success) {
-        set({ isDeviceBound: true, deviceConnectId: bindResult.connectId });
+        set({ isDeviceBound: true, deviceConnectId: bindResult.connectId || identity.connectId });
       }
+
+      // Step 3: Ensure local Prekeys (Ed25519 signing key, SPK, OPKs) are generated & registered to backend
+      const { publicBundle } = await getOrCreateDevicePrekeys(identity);
+      await registerPrekeyBundleWithBackend(publicBundle);
     } catch (error) {
-      console.error("Auto device identity binding error:", error);
+      console.error("Auto device identity / prekey binding error:", error);
       const localId = getDeviceConnectId();
       if (localId) {
         set({ deviceConnectId: localId });
@@ -47,7 +57,7 @@ export const useAuthStore = create((set, get) => ({
       set({ authUser: res.data });
 
       get().connectSocket(res.data);
-      get().initDeviceIdentity();
+      await get().initDeviceIdentity();
     } catch (error) {
       console.error("Error in checkAuth:", error);
       set({ authUser: null });
@@ -77,6 +87,13 @@ export const useAuthStore = create((set, get) => ({
 
     socket.on("getOnlineUsers", (userIds) => {
       set({ onlineUsers: userIds });
+    });
+
+    // Attach global real-time message routing to update conversation lists and decrypt active messages
+    socket.off("newMessage");
+    socket.on("newMessage", async (newMessage) => {
+      const chatStore = useChatStore.getState();
+      chatStore.handleIncomingSocketMessage(newMessage);
     });
   },
 
