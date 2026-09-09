@@ -1,6 +1,13 @@
 import ImageKit, { toFile } from "@imagekit/nodejs";
 
-const imagekit = new ImageKit({ privateKey: process.env.IMAGEKIT_PRIVATE_KEY });
+let imagekit = null;
+
+function getImageKitClient() {
+  if (!imagekit && process.env.IMAGEKIT_PRIVATE_KEY) {
+    imagekit = new ImageKit({ privateKey: process.env.IMAGEKIT_PRIVATE_KEY });
+  }
+  return imagekit;
+}
 
 function hasImageKitConfig() {
   return Boolean(process.env.IMAGEKIT_PRIVATE_KEY);
@@ -12,7 +19,7 @@ function hasImageKitConfig() {
 
 //Regular Expression for verification
 function createFileName(originalName = "upload") {
-    const safeName = originalName.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const safeName = originalName.replace(/[^a-zA-Z0-9._-]/g, "_");
   return `chat-${Date.now()}-${safeName}`;
 }
 
@@ -21,9 +28,14 @@ function createFileName(originalName = "upload") {
  * @see https://imagekit.io/docs/api-reference/upload-file/upload-file
  */
 async function uploadChatMedia(file) {
+  const client = getImageKitClient();
+  if (!client) {
+    throw new Error("ImageKit is not configured");
+  }
+
   const fileName = createFileName(file.originalname);
 
-  const result = await imagekit.files.upload({
+  const result = await client.files.upload({
     file: await toFile(file.buffer, fileName, { type: file.mimetype }),
     fileName,
     folder: "/chat",
