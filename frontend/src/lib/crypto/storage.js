@@ -38,6 +38,13 @@ function openCryptoDatabase() {
       if (!db.objectStoreNames.contains(STORAGE_STORE_NAME)) {
         db.createObjectStore(STORAGE_STORE_NAME);
       }
+      if (!db.objectStoreNames.contains("e2e_prekey_store")) {
+        db.createObjectStore("e2e_prekey_store");
+      }
+      if (!db.objectStoreNames.contains("e2e_sessions_store")) {
+        const store = db.createObjectStore("e2e_sessions_store", { keyPath: "sessionId" });
+        store.createIndex("peerConnectId", "peerConnectId", { unique: false });
+      }
     };
 
     request.onsuccess = () => {
