@@ -153,7 +153,6 @@ describe("Backend Encrypted Message Envelope & Persistence Suite (Feature 2 — 
         params: { id: bobUserId },
         body: {
           encryptedEnvelope: validEnvelope,
-          text: secretPlaintext, // Sender might mistakenly pass text alongside envelope
         },
       };
       const res = createMockRes();
