@@ -34,7 +34,44 @@ export function assertNoSecretMaterial(obj) {
     if (seen.has(current)) continue;
     seen.add(current);
 
-    for (const key of Object.keys(current)) {
+    // CryptoKey instance inspection
+    if (typeof CryptoKey !== "undefined" && current instanceof CryptoKey) {
+      if (current.type === "private" || current.type === "secret") {
+        throw new CryptographicError(
+          `Security Violation: Attempted to serialize raw CryptoKey of type '${current.type}' into public envelope`
+        );
+      }
+    }
+
+    // Map inspection
+    if (current instanceof Map) {
+      for (const [k, v] of current.entries()) {
+        if (typeof k === "string") {
+          const lowerK = k.toLowerCase();
+          for (const forbidden of FORBIDDEN_ENVELOPE_KEYS) {
+            if (lowerK === forbidden.toLowerCase() || lowerK.includes("privatekey") || lowerK.includes("secret")) {
+              throw new CryptographicError(
+                `Security Violation: Attempted to serialize secret field '${k}' from Map into public envelope`
+              );
+            }
+          }
+        }
+        if (v && typeof v === "object") stack.push(v);
+      }
+      continue;
+    }
+
+    // Set inspection
+    if (current instanceof Set) {
+      for (const item of current) {
+        if (item && typeof item === "object") stack.push(item);
+      }
+      continue;
+    }
+
+    // Comprehensive property inspection (enumerable + non-enumerable)
+    const propertyNames = Object.getOwnPropertyNames(current);
+    for (const key of propertyNames) {
       const lowerKey = key.toLowerCase();
       for (const forbidden of FORBIDDEN_ENVELOPE_KEYS) {
         if (lowerKey === forbidden.toLowerCase() || lowerKey.includes("privatekey") || lowerKey.includes("secret")) {
@@ -44,8 +81,13 @@ export function assertNoSecretMaterial(obj) {
         }
       }
 
-      if (typeof current[key] === "object" && current[key] !== null) {
-        stack.push(current[key]);
+      try {
+        const val = current[key];
+        if (typeof val === "object" && val !== null) {
+          stack.push(val);
+        }
+      } catch {
+        // Ignore getter exceptions during inspection
       }
     }
   }
@@ -291,8 +333,8 @@ export function validateEnvelopeStructure(envelope) {
   const header = envelope.ratchetHeader;
   if (!header || typeof header !== "object") return false;
   if (!header.dhRatchetPublicKey || typeof header.dhRatchetPublicKey !== "string") return false;
-  if (typeof header.messageNumber !== "number" || header.messageNumber < 0) return false;
-  if (typeof header.previousChainLength !== "number" || header.previousChainLength < 0) return false;
+  if (typeof header.messageNumber !== "number" || header.messageNumber < 0 || !Number.isInteger(header.messageNumber)) return false;
+  if (typeof header.previousChainLength !== "number" || header.previousChainLength < 0 || !Number.isInteger(header.previousChainLength)) return false;
 
   try {
     assertNoSecretMaterial(envelope);
