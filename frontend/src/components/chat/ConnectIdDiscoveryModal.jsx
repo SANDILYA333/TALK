@@ -77,9 +77,13 @@ export function ConnectIdDiscoveryModal({ trigger }) {
     }
   };
 
+  const displayConnectId = myConnectId || authUser?.connectId || (isBindingDevice ? "Generating..." : "TALK-XXXX-XXXX");
+  const canCopyMyId = Boolean(myConnectId || authUser?.connectId);
+
   const handleCopyMyId = () => {
-    if (myConnectId && navigator?.clipboard?.writeText) {
-      navigator.clipboard.writeText(myConnectId);
+    const idToCopy = myConnectId || authUser?.connectId;
+    if (idToCopy && navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(idToCopy);
       setMyIdCopied(true);
       setTimeout(() => setMyIdCopied(false), 2000);
     }
@@ -105,31 +109,31 @@ export function ConnectIdDiscoveryModal({ trigger }) {
         <Modal.Container size="md" scroll="inside" placement="center">
           <Modal.Dialog className="max-h-[85dvh] border border-border bg-background text-foreground shadow-2xl">
             <Modal.Header className="flex flex-row items-center justify-between gap-3 border-b border-border pb-3">
-              <div className="flex items-center gap-2">
-                <div className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  <UserSearch className="size-4" />
-                </div>
-                <div>
-                  <Modal.Heading className="text-base font-semibold tracking-tight text-foreground">
-                    Connect ID Discovery
-                  </Modal.Heading>
-                  <p className="text-xs text-muted">
-                    Search and verify public cryptographic identities
-                  </p>
-                </div>
+            <div className="flex items-center gap-2.5">
+              <div className="flex size-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <Fingerprint className="size-5" />
               </div>
-              <Modal.CloseTrigger />
-            </Modal.Header>
+              <div>
+                <Modal.Heading className="text-base font-bold text-foreground">
+                  Connect ID Discovery
+                </Modal.Heading>
+                <p className="text-xs text-muted">
+                  Search and verify public cryptographic identities
+                </p>
+              </div>
+            </div>
+          </Modal.Header>
 
-            <Modal.Body className="space-y-4 pt-4">
-              {/* Your Device Identity Card */}
-              <div className="rounded-xl border border-primary/25 bg-primary/5 p-3.5 space-y-2">
+          <Modal.Body className="space-y-4 pt-2">
+            {/* My Connect ID Card */}
+            <div className="space-y-2">
+              <div className="rounded-xl border border-border/80 bg-default/10 p-3.5 space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="flex items-center gap-1.5 text-xs font-semibold text-primary">
-                    <Fingerprint className="size-4 text-primary" />
+                  <span className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                    <Fingerprint className="size-3.5 text-primary" />
                     Your Connect ID
                   </span>
-                  {isDeviceBound ? (
+                  {isDeviceBound || authUser?.connectId ? (
                     <span className="inline-flex items-center gap-1.5 rounded-full bg-success/15 px-2 py-0.5 text-[10px] font-semibold text-success">
                       <span className="size-1.5 rounded-full bg-success animate-pulse" />
                       Active & Registered
@@ -150,7 +154,7 @@ export function ConnectIdDiscoveryModal({ trigger }) {
                   <div className="flex items-center gap-2 min-w-0">
                     <KeyRound className="size-4 text-primary shrink-0" />
                     <code className="truncate font-mono text-sm font-bold tracking-wide text-foreground">
-                      {myConnectId || (isBindingDevice ? "Generating..." : "TALK-XXXX-XXXX")}
+                      {displayConnectId}
                     </code>
                   </div>
                   <Button
@@ -158,7 +162,7 @@ export function ConnectIdDiscoveryModal({ trigger }) {
                     size="sm"
                     variant="ghost"
                     onClick={handleCopyMyId}
-                    isDisabled={!myConnectId}
+                    isDisabled={!canCopyMyId}
                     className="h-7 gap-1 px-2.5 text-xs font-medium text-foreground hover:bg-default/20"
                     aria-label="Copy my Connect ID"
                   >
@@ -179,8 +183,9 @@ export function ConnectIdDiscoveryModal({ trigger }) {
                   Share this ID with friends so they can find and chat with you securely.
                 </p>
               </div>
+            </div>
 
-              {/* Visual Divider */}
+            {/* Visual Divider */}
               <div className="relative flex items-center justify-center pt-1">
                 <div className="w-full border-t border-border" />
                 <span className="absolute bg-background px-3 text-[10px] font-semibold text-muted uppercase tracking-wider">
