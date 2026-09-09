@@ -31,10 +31,16 @@ function openSessionDatabase() {
       return;
     }
 
-    const request = globalThis.indexedDB.open(STORAGE_DB_NAME, STORAGE_DB_VERSION + 1);
+    const request = globalThis.indexedDB.open(STORAGE_DB_NAME, STORAGE_DB_VERSION);
 
     request.onupgradeneeded = (event) => {
       const db = event.target.result;
+      if (!db.objectStoreNames.contains("identity_keys")) {
+        db.createObjectStore("identity_keys");
+      }
+      if (!db.objectStoreNames.contains("e2e_prekey_store")) {
+        db.createObjectStore("e2e_prekey_store");
+      }
       if (!db.objectStoreNames.contains(SESSION_STORE_NAME)) {
         const store = db.createObjectStore(SESSION_STORE_NAME, { keyPath: "sessionId" });
         store.createIndex("peerConnectId", "peerConnectId", { unique: false });
