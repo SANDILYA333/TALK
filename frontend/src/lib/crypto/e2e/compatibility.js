@@ -135,37 +135,39 @@ export function classifyMessage(message) {
  * @returns {object} Normalized message object ready for UI rendering
  */
 export function normalizeMessage(message, authUserId) {
+  const safeMsg = (message && typeof message === "object") ? message : {};
   const classification = classifyMessage(message);
-  const isMe = authUserId && message.senderId && String(message.senderId) === String(authUserId);
+  const isMe = authUserId && safeMsg.senderId && String(safeMsg.senderId) === String(authUserId);
 
   let displayText;
 
-  if (message.decryptedText) {
-    displayText = message.decryptedText;
+  if (safeMsg.decryptedText) {
+    displayText = safeMsg.decryptedText;
   } else if (classification.state === MESSAGE_STATES.STATE_A_LEGACY) {
-    displayText = message.text || "";
+    displayText = safeMsg.text || "";
   } else if (classification.state === MESSAGE_STATES.STATE_D_UNDECRYPTABLE) {
     displayText = "Unable to decrypt message";
   } else if (classification.state === MESSAGE_STATES.STATE_B_ENCRYPTED) {
-    displayText = isMe ? (message.text || "[Encrypted Message]") : "[Encrypted Message]";
+    displayText = isMe ? (safeMsg.text || "[Encrypted Message]") : "[Encrypted Message]";
   } else {
     displayText = "[Invalid Message]";
   }
 
   return {
-    id: message._id || message.id,
-    senderId: message.senderId,
-    receiverId: message.receiverId,
+    id: safeMsg._id || safeMsg.id || "invalid",
+    senderId: safeMsg.senderId || null,
+    receiverId: safeMsg.receiverId || null,
     role: isMe ? "me" : "them",
     displayText,
     text: displayText,
-    imageUrl: message.image || message.imageUrl,
-    videoUrl: message.video || message.videoUrl,
-    createdAt: message.createdAt,
+    imageUrl: safeMsg.image || safeMsg.imageUrl || null,
+    videoUrl: safeMsg.video || safeMsg.videoUrl || null,
+    createdAt: safeMsg.createdAt || new Date().toISOString(),
     state: classification.state,
+    error: classification.reason,
     isLegacy: classification.isLegacy,
     isEncrypted: classification.isEncrypted,
-    isDecrypted: Boolean(message.decryptedText),
+    isDecrypted: Boolean(safeMsg.decryptedText),
     decryptionFailed: classification.state === MESSAGE_STATES.STATE_D_UNDECRYPTABLE,
     isValid: classification.isValid,
   };
