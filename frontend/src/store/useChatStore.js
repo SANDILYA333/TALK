@@ -2,8 +2,8 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import toast from "react-hot-toast";
 
-import { axiosInstance } from "../lib/axios";
-import { useAuthStore } from "./useAuthStore";
+import { axiosInstance } from "../lib/axios.js";
+import { useAuthStore } from "./useAuthStore.js";
 import { getOrCreateDeviceIdentity } from "../lib/crypto/identity.js";
 import {
   establishSessionWithPeer,
@@ -203,28 +203,45 @@ export const useChatStore = create(
         }
       },
 
+      handleIncomingSocketMessage: async (newMessage) => {
+        if (!newMessage) return;
+        const authUser = useAuthStore.getState().authUser;
+        const activeConversationId = get().activeConversationId;
+
+        // 1. Always refresh conversations list so sidebar updates immediately
+        get().getConversations();
+
+        // 2. If the message belongs to the active conversation, decrypt and append in real time
+        const isCurrentChat =
+          activeConversationId &&
+          (String(newMessage.senderId) === String(activeConversationId) ||
+            String(newMessage.receiverId) === String(activeConversationId));
+
+        if (isCurrentChat) {
+          try {
+            const processedMessage = await decryptSingleMessage(newMessage, authUser);
+            set((state) => {
+              // Avoid duplicate messages if already present
+              const alreadyExists = state.messages.some(
+                (m) => String(m._id) === String(processedMessage._id)
+              );
+              if (alreadyExists) return state;
+              return { messages: [...state.messages, processedMessage] };
+            });
+          } catch (err) {
+            console.error("Failed to decrypt real-time incoming message:", err);
+          }
+        }
+      },
+
       subscribeToMessages: (userId) => {
         if (!userId) return;
-
-        const socket = useAuthStore.getState().socket;
-        if (!socket) return;
-
-        socket.off("newMessage");
-        socket.on("newMessage", async (newMessage) => {
-          // If message is not from the active chat partner, ignore in this view
-          if (String(newMessage.senderId) !== String(userId)) return;
-
-          const authUser = useAuthStore.getState().authUser;
-          const processedMessage = await decryptSingleMessage(newMessage, authUser);
-
-          set((state) => ({ messages: [...state.messages, processedMessage] }));
-          get().getConversations();
-        });
+        // Global socket listener handles incoming messages; ensure messages are loaded
+        get().getMessages(userId);
       },
 
       unsubscribeFromMessages: () => {
-        const socket = useAuthStore.getState().socket;
-        socket?.off("newMessage");
+        // No-op to preserve global socket message routing
       },
 
       setSelectedUser: (selectedUser) => set({ selectedUser }),
@@ -236,7 +253,7 @@ export const useChatStore = create(
             state.users.find((user) => user._id === activeConversationId) ||
             state.conversations.find((user) => user._id === activeConversationId) ||
             null,
-          messages: activeConversationId ? state.messages : [],
+          messages: [],
         }));
       },
 
