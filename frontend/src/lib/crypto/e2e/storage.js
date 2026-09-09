@@ -42,12 +42,19 @@ function openPrekeyDatabase() {
       return;
     }
 
-    const request = globalThis.indexedDB.open(STORAGE_DB_NAME, STORAGE_DB_VERSION + 1);
+    const request = globalThis.indexedDB.open(STORAGE_DB_NAME, STORAGE_DB_VERSION);
 
     request.onupgradeneeded = (event) => {
       const db = event.target.result;
+      if (!db.objectStoreNames.contains("identity_keys")) {
+        db.createObjectStore("identity_keys");
+      }
       if (!db.objectStoreNames.contains(PREKEY_STORE_NAME)) {
         db.createObjectStore(PREKEY_STORE_NAME);
+      }
+      if (!db.objectStoreNames.contains("e2e_sessions_store")) {
+        const store = db.createObjectStore("e2e_sessions_store", { keyPath: "sessionId" });
+        store.createIndex("peerConnectId", "peerConnectId", { unique: false });
       }
     };
 
