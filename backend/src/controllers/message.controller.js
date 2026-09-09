@@ -209,12 +209,26 @@ export async function sendMessage(req, res) {
       else imageUrl = url;
     }
 
-    // Validate payload: must contain encryptedEnvelope, text, or media
+    // 1. Conflict Prevention: Forbid ambiguous payloads containing both text and encryptedEnvelope
+    if (encryptedEnvelope && text !== undefined && text !== null && text !== "") {
+      return res.status(400).json({
+        message: "Conflicting message payload: cannot provide both plaintext and encrypted envelope",
+      });
+    }
+
+    // 2. Validate payload presence: must contain encryptedEnvelope, text, or media
     if (!encryptedEnvelope && !text && !imageUrl && !videoUrl) {
       return res.status(400).json({ message: "Message content or encrypted envelope is required" });
     }
 
-    // If encryptedEnvelope is provided, strictly validate its structure
+    // 3. Downgrade Prevention: If recipient has a registered E2EE identity (Connect ID), enforce encryptedEnvelope
+    if (recipientUser.connectId && !encryptedEnvelope && text) {
+      return res.status(400).json({
+        message: "Recipient requires end-to-end encryption. Plaintext sending is disabled.",
+      });
+    }
+
+    // 4. Validate encrypted envelope structure if provided
     if (encryptedEnvelope) {
       const isValidEnvelope = validateEncryptedEnvelopePayload(encryptedEnvelope);
       if (!isValidEnvelope) {
@@ -225,7 +239,7 @@ export async function sendMessage(req, res) {
     const newMessage = new Message({
       senderId,
       receiverId,
-      // Zero-plaintext guarantee: when encryptedEnvelope is present, text is stored as null
+      // Zero-plaintext guarantee: when encryptedEnvelope is present, text is strictly null
       encryptedEnvelope: encryptedEnvelope || null,
       text: encryptedEnvelope ? null : text || null,
       image: imageUrl,
