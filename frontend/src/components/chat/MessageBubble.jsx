@@ -1,3 +1,4 @@
+import { Check, CheckCheck, Clock, Hourglass } from "lucide-react";
 import { withTransform } from "../../lib/imagekit";
 import { MessageVideo } from "./MessageVideo";
 
@@ -9,6 +10,8 @@ export function MessageBubble({ message }) {
   const hasImage = Boolean(message.imageUrl);
   const hasVideo = Boolean(message.videoUrl);
   const isDecryptionFailed = Boolean(message.decryptionFailed);
+  const hasExpiry = Boolean(message.expiresAt);
+  const status = message.status || "sent";
 
   return (
     <div className={`flex w-full ${isOwnMessage ? "justify-end" : "justify-start"}`}>
@@ -34,7 +37,12 @@ export function MessageBubble({ message }) {
             {message.text}
           </p>
         ) : null}
-        <div className="flex items-center justify-end gap-1 mt-1">
+        <div className="flex items-center justify-end gap-1.5 mt-1">
+          {hasExpiry ? (
+            <span title="Disappearing message active" className="opacity-75">
+              <Hourglass className="size-3 text-amber-300 animate-pulse" />
+            </span>
+          ) : null}
           <p
             className={`text-[11px] tabular-nums ${
               isOwnMessage ? "text-accent-foreground/75" : "text-muted"
@@ -42,6 +50,19 @@ export function MessageBubble({ message }) {
           >
             {message.time}
           </p>
+          {isOwnMessage ? (
+            <span className="inline-flex items-center">
+              {status === "read" ? (
+                <CheckCheck className="size-3.5 text-sky-300" title="Read" />
+              ) : status === "delivered" ? (
+                <CheckCheck className="size-3.5 opacity-60" title="Delivered" />
+              ) : status === "queued" ? (
+                <Clock className="size-3 opacity-60 animate-spin" title="Queued (Offline)" />
+              ) : (
+                <Check className="size-3.5 opacity-60" title="Sent" />
+              )}
+            </span>
+          ) : null}
         </div>
       </div>
     </div>
