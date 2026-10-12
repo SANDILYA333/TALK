@@ -74,7 +74,15 @@ const messageSchema = new mongoose.Schema(
     receiverId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      required: function () {
+        return !this.groupId;
+      },
+      index: true,
+    },
+    groupId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Group",
+      default: null,
       index: true,
     },
     encryptedEnvelope: {
@@ -94,12 +102,32 @@ const messageSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    status: {
+      type: String,
+      enum: ["sent", "delivered", "read"],
+      default: "sent",
+      index: true,
+    },
+    deliveredAt: {
+      type: Date,
+      default: null,
+    },
+    readAt: {
+      type: Date,
+      default: null,
+    },
+    expiresAt: {
+      type: Date,
+      default: null,
+    },
   },
   { timestamps: true }
 );
 
 // Compound index for message queries
 messageSchema.index({ senderId: 1, receiverId: 1, createdAt: 1 });
+// TTL index for automatic expiration of disappearing messages
+messageSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0, sparse: true });
 
 const Message = mongoose.model("Message", messageSchema);
 
