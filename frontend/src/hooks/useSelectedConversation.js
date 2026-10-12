@@ -29,6 +29,8 @@ function mapUserToConversation({ user, messages, authUser, onlineUsers }) {
       isEncrypted: normalized.isEncrypted,
       isDecrypted: normalized.isDecrypted,
       decryptionFailed: normalized.decryptionFailed,
+      status: message.status || "sent",
+      expiresAt: message.expiresAt || null,
     };
   });
 
@@ -40,6 +42,8 @@ function mapUserToConversation({ user, messages, authUser, onlineUsers }) {
       isOnline: onlineUsers.includes(user._id),
       avatarUrl: user.profilePic,
       initials: getInitials(user.fullName),
+      connectId: user.connectId,
+      activeDeviceId: user.activeDeviceId,
     },
     messages: mappedMessages,
   };
