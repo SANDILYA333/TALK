@@ -318,10 +318,25 @@ export function initReceiverRatchet({ rootKeyHex, sessionId, ourRatchetKeyPair }
  *   header contains: dhRatchetPublicKey, messageNumber (N), previousChainLength (PN)
  */
 export async function ratchetEncrypt(state) {
-  if (!state || !state.CKs) {
+  if (!state) {
+    throw new CryptographicError("ratchetEncrypt: state is required");
+  }
+
+  // If receiver state was established and peer ratchet key (DHr) is known, but sending chain not yet derived:
+  if (!state.CKs && state.DHr) {
+    const newDHs = await generateRatchetKeyPair();
+    const dhOutputSend = await dh(newDHs.privateKey, state.DHr);
+    const { newRootKeyHex, newChainKeyHex } = await kdfRootKey(state.RK, dhOutputSend);
+    state.DHs = newDHs;
+    state.RK = newRootKeyHex;
+    state.CKs = newChainKeyHex;
+    state.Ns = 0;
+  }
+
+  if (!state.CKs) {
     throw new CryptographicError(
       "ratchetEncrypt: No sending chain key available. " +
-      "Ensure initSenderRatchet was called before encrypting."
+      "Ensure initSenderRatchet was called or initial peer ratchet key is established before encrypting."
     );
   }
 
