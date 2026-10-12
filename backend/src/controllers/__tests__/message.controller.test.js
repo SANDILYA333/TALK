@@ -3,6 +3,9 @@ import assert from "node:assert/strict";
 
 import {
   sendMessage,
+  getMessages,
+  updateMessageStatus,
+  markConversationRead,
   validateEncryptedEnvelopePayload,
 } from "../message.controller.js";
 import Message from "../../models/message.model.js";
@@ -208,6 +211,152 @@ describe("Backend Encrypted Message Envelope & Persistence Suite (Feature 2 — 
       assert.equal(res.statusCode, 404);
       assert.equal(res.body.message, "Recipient user not found");
       assert.equal(savedMessageDocs.length, 0);
+    });
+  });
+
+  // =========================================================================
+  // 3. Message Receipts & Status Updates (Task 2.2)
+  // =========================================================================
+  describe("3. Message Receipts & Status Updates (Task 2.2)", () => {
+    it("allows message recipient to update status to delivered", async () => {
+      const mockMsg = {
+        _id: "msg_123",
+        senderId: aliceUserId,
+        receiverId: bobUserId,
+        status: "sent",
+        deliveredAt: null,
+        readAt: null,
+        save: async function () { return this; },
+      };
+      Message.findById = async (id) => (id === "msg_123" ? mockMsg : null);
+
+      const req = {
+        user: { _id: bobUserId },
+        params: { id: "msg_123" },
+        body: { status: "delivered" },
+      };
+      const res = createMockRes();
+
+      await updateMessageStatus(req, res);
+
+      assert.equal(res.statusCode, 200);
+      assert.equal(mockMsg.status, "delivered");
+      assert(mockMsg.deliveredAt instanceof Date, "deliveredAt timestamp must be set");
+    });
+
+    it("rejects unauthorized status update from user who is not recipient", async () => {
+      const mockMsg = {
+        _id: "msg_123",
+        senderId: aliceUserId,
+        receiverId: bobUserId,
+        status: "sent",
+        save: async function () { return this; },
+      };
+      Message.findById = async () => mockMsg;
+
+      const req = {
+        user: { _id: aliceUserId }, // Alice is sender, not recipient
+        params: { id: "msg_123" },
+        body: { status: "read" },
+      };
+      const res = createMockRes();
+
+      await updateMessageStatus(req, res);
+
+      assert.equal(res.statusCode, 403);
+      assert.equal(res.body.message, "Not authorized to update receipt for this message");
+    });
+
+    it("rejects invalid status transitions", async () => {
+      const req = {
+        user: { _id: bobUserId },
+        params: { id: "msg_123" },
+        body: { status: "invalid_status" },
+      };
+      const res = createMockRes();
+
+      await updateMessageStatus(req, res);
+
+      assert.equal(res.statusCode, 400);
+    });
+
+    it("idempotently handles already read messages", async () => {
+      const readDate = new Date("2026-10-01");
+      const mockMsg = {
+        _id: "msg_123",
+        senderId: aliceUserId,
+        receiverId: bobUserId,
+        status: "read",
+        deliveredAt: readDate,
+        readAt: readDate,
+        save: async function () { return this; },
+      };
+      Message.findById = async () => mockMsg;
+
+      const req = {
+        user: { _id: bobUserId },
+        params: { id: "msg_123" },
+        body: { status: "read" },
+      };
+      const res = createMockRes();
+
+      await updateMessageStatus(req, res);
+
+      assert.equal(res.statusCode, 200);
+      assert.equal(mockMsg.readAt, readDate, "readAt should remain unchanged");
+    });
+  });
+
+  // =========================================================================
+  // 4. Disappearing Messages & Pagination (Features 3 & Phase 2.6)
+  // =========================================================================
+  describe("4. Disappearing Messages & Pagination (Features 3 & Phase 2.6)", () => {
+    it("stores future expiresAt on message creation", async () => {
+      const futureExpiry = new Date(Date.now() + 3600000).toISOString();
+      const req = {
+        user: { _id: aliceUserId },
+        params: { id: bobUserId },
+        body: {
+          encryptedEnvelope: validEnvelope,
+          expiresAt: futureExpiry,
+        },
+      };
+      const res = createMockRes();
+
+      await sendMessage(req, res);
+
+      assert.equal(res.statusCode, 201);
+      assert.equal(savedMessageDocs.length, 1);
+      assert(savedMessageDocs[0].expiresAt instanceof Date);
+    });
+
+    it("excludes expired messages during retrieval", async () => {
+      let queryFilterPassed = null;
+      Message.find = function (query) {
+        queryFilterPassed = query;
+        return {
+          sort() {
+            return {
+              limit() {
+                return [];
+              },
+            };
+          },
+        };
+      };
+
+      const req = {
+        user: { _id: aliceUserId },
+        params: { id: bobUserId },
+        query: { limit: "20" },
+      };
+      const res = createMockRes();
+
+      await getMessages(req, res);
+
+      assert.equal(res.statusCode, 200);
+      assert(queryFilterPassed.$and, "Expiry filter must be applied to query");
+      assert.deepEqual(Array.isArray(res.body), true);
     });
   });
 });
