@@ -165,15 +165,34 @@ export async function getMessages(req, res) {
   try {
     const { id: userToChatId } = req.params;
     const myId = req.user._id;
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 100);
+    const { before } = req.query;
 
-    const messages = await Message.find({
+    const query = {
       $or: [
         { senderId: myId, receiverId: userToChatId },
         { senderId: userToChatId, receiverId: myId },
       ],
-    }).sort({ createdAt: 1 });
+      $and: [
+        {
+          $or: [
+            { expiresAt: null },
+            { expiresAt: { $gt: new Date() } },
+          ],
+        },
+      ],
+    };
 
-    res.status(200).json(messages);
+    if (before) {
+      query.createdAt = { $lt: new Date(before) };
+    }
+
+    // Retrieve up to limit messages ordered by createdAt descending, then reverse for chronological order
+    const messages = await Message.find(query)
+      .sort({ createdAt: -1 })
+      .limit(limit);
+
+    res.status(200).json(messages.reverse());
   } catch (error) {
     logger.error("get_messages_failed", "Error in getMessages", {
       error: error.message,
@@ -184,7 +203,7 @@ export async function getMessages(req, res) {
 
 export async function sendMessage(req, res) {
   try {
-    const { text, encryptedEnvelope } = req.body;
+    const { text, encryptedEnvelope, expiresAt } = req.body;
     const { id: receiverId } = req.params;
     const senderId = req.user._id;
 
@@ -236,6 +255,14 @@ export async function sendMessage(req, res) {
       }
     }
 
+    let validatedExpiresAt = null;
+    if (expiresAt) {
+      const expDate = new Date(expiresAt);
+      if (!isNaN(expDate.getTime()) && expDate.getTime() > Date.now()) {
+        validatedExpiresAt = expDate;
+      }
+    }
+
     const newMessage = new Message({
       senderId,
       receiverId,
@@ -244,6 +271,8 @@ export async function sendMessage(req, res) {
       text: encryptedEnvelope ? null : text || null,
       image: imageUrl,
       video: videoUrl,
+      status: "sent",
+      expiresAt: validatedExpiresAt,
     });
 
     await newMessage.save();
@@ -253,10 +282,115 @@ export async function sendMessage(req, res) {
     if (receiverSocketId) {
       io.to(receiverSocketId).emit("newMessage", newMessage);
     }
+    // Multi-socket room broadcast to all active devices of the recipient
+    io.to(`user:${receiverId}`).emit("newMessage", newMessage);
+    // Broadcast to other tabs of the sender
+    io.to(`user:${senderId}`).emit("messageSent", newMessage);
 
     res.status(201).json(newMessage);
   } catch (error) {
     logger.error("send_message_failed", "Error in sendMessage", {
+      error: error.message,
+    });
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+/**
+ * Updates message delivery or read receipt status.
+ * Authorized strictly to the recipient of the message.
+ */
+export async function updateMessageStatus(req, res) {
+  try {
+    const { id: messageId } = req.params;
+    const { status } = req.body; // "delivered" | "read"
+    const myId = req.user._id;
+
+    if (!["delivered", "read"].includes(status)) {
+      return res.status(400).json({ message: "Invalid receipt status" });
+    }
+
+    const message = await Message.findById(messageId);
+    if (!message) {
+      return res.status(404).json({ message: "Message not found" });
+    }
+
+    // Only the recipient can acknowledge delivery or read
+    if (message.receiverId.toString() !== myId.toString()) {
+      return res.status(403).json({ message: "Not authorized to update receipt for this message" });
+    }
+
+    // Monotonic idempotent status updates: read > delivered > sent
+    if (message.status === "read") {
+      return res.status(200).json(message);
+    }
+    if (message.status === "delivered" && status === "delivered") {
+      return res.status(200).json(message);
+    }
+
+    const now = new Date();
+    message.status = status;
+    if (status === "delivered" && !message.deliveredAt) {
+      message.deliveredAt = now;
+    }
+    if (status === "read") {
+      if (!message.deliveredAt) message.deliveredAt = now;
+      message.readAt = now;
+    }
+
+    await message.save();
+
+    // Broadcast receipt to sender's active devices
+    io.to(`user:${message.senderId}`).emit("messageReceipt", {
+      messageId: message._id,
+      status: message.status,
+      deliveredAt: message.deliveredAt,
+      readAt: message.readAt,
+    });
+
+    res.status(200).json(message);
+  } catch (error) {
+    logger.error("update_message_status_failed", "Error in updateMessageStatus", {
+      error: error.message,
+    });
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+/**
+ * Marks all unread messages from a contact as read.
+ */
+export async function markConversationRead(req, res) {
+  try {
+    const { id: senderId } = req.params;
+    const myId = req.user._id;
+    const now = new Date();
+
+    const result = await Message.updateMany(
+      {
+        senderId,
+        receiverId: myId,
+        status: { $ne: "read" },
+      },
+      {
+        $set: {
+          status: "read",
+          readAt: now,
+        },
+      }
+    );
+
+    io.to(`user:${senderId}`).emit("conversationRead", {
+      readerId: myId,
+      readAt: now,
+    });
+
+    res.status(200).json({
+      message: "Conversation marked as read",
+      modifiedCount: result.modifiedCount,
+    });
+  } catch (error) {
+    logger.error("mark_conversation_read_failed", "Error in markConversationRead", {
       error: error.message,
     });
     res.status(500).json({ message: "Internal server error" });
