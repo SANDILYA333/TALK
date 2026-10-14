@@ -8,6 +8,7 @@
 import {
   initiateX3DHSession,
   receiveX3DHSession,
+  computeSessionId,
 } from "./x3dh.js";
 import {
   saveSessionState,
@@ -116,6 +117,27 @@ export async function handleIncomingX3DHHandshake({
 }) {
   if (!x3dhHeader || !localIdentityKeyPair || !localConnectId) {
     throw new CryptographicError("Missing required parameters to handle incoming X3DH handshake");
+  }
+
+  // Check if session for this handshake is already established (idempotency guard)
+  if (x3dhHeader.ephemeralPublicKey && x3dhHeader.senderConnectId) {
+    const expectedSessionId = await computeSessionId(
+      localConnectId,
+      x3dhHeader.senderConnectId,
+      x3dhHeader.ephemeralPublicKey
+    );
+    const existingSession = await loadSessionState(expectedSessionId);
+    if (
+      existingSession &&
+      existingSession.status === "ESTABLISHED" &&
+      existingSession.peerConnectId === x3dhHeader.senderConnectId
+    ) {
+      return {
+        session: existingSession,
+        masterSecretHex: existingSession.masterSecretHex || "",
+        isAlreadyEstablished: true,
+      };
+    }
   }
 
   // 1. Load active local signed prekey if not explicitly provided

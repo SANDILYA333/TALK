@@ -16,6 +16,11 @@ import {
 } from "../lib/crypto/e2e/session-storage.js";
 import { encryptMessage, decryptMessage } from "../lib/crypto/e2e/messaging.js";
 import { classifyMessage, MESSAGE_STATES } from "../lib/crypto/e2e/compatibility.js";
+import {
+  saveDecryptedMessage,
+  loadDecryptedMessages,
+} from "../lib/crypto/e2e/message-store.js";
+import { queueOfflineMessage } from "../lib/offline/mesh.js";
 
 /**
  * Processes and decrypts a single message using the centralized compatibility classifier.
@@ -134,6 +139,36 @@ export const useChatStore = create(
       composerText: "",
       isSoundEnabled: true,
       isSendingMedia: false,
+      typingUsers: {},
+      disappearingTimer: 0,
+      activeCall: null,
+      isSafetyModalOpen: false,
+      isCallModalOpen: false,
+
+      setDisappearingTimer: (disappearingTimer) => set({ disappearingTimer }),
+      setTypingUser: (userId, isTyping) =>
+        set((state) => ({
+          typingUsers: { ...state.typingUsers, [userId]: isTyping },
+        })),
+      setActiveCall: (activeCall) => set({ activeCall }),
+      setIsSafetyModalOpen: (isSafetyModalOpen) => set({ isSafetyModalOpen }),
+      setIsCallModalOpen: (isCallModalOpen) => set({ isCallModalOpen }),
+
+      handleMessageReceipt: ({ messageId, status, deliveredAt, readAt }) => {
+        set((state) => ({
+          messages: state.messages.map((m) => {
+            if (String(m._id || m.id) === String(messageId)) {
+              return {
+                ...m,
+                status,
+                deliveredAt: deliveredAt || m.deliveredAt,
+                readAt: readAt || m.readAt,
+              };
+            }
+            return m;
+          }),
+        }));
+      },
 
       getUsers: async () => {
         set({ isUsersLoading: true });
@@ -169,15 +204,33 @@ export const useChatStore = create(
         if (!userId) return;
         set({ isMessagesLoading: true });
         try {
+          // 1. Instantly load locally cached decrypted messages first
+          const cachedMessages = await loadDecryptedMessages(userId);
+          if (cachedMessages && cachedMessages.length > 0) {
+            set({ messages: cachedMessages });
+          }
+
+          // 2. Fetch latest messages from backend
           const res = await axiosInstance.get(`/messages/${userId}`);
           const authUser = useAuthStore.getState().authUser;
           const rawMessages = res.data;
 
-          // Decrypt messages sequentially to advance receiving ratchet in order
           const processedMessages = [];
           for (const msg of rawMessages) {
+            // Check if already decrypted and cached locally
+            const cached = cachedMessages?.find((c) => String(c._id || c.id) === String(msg._id));
+            if (cached && (cached.decryptedText || cached.text)) {
+              processedMessages.push(cached);
+              continue;
+            }
+
+            // Otherwise decrypt fresh envelope and cache locally
             const processed = await decryptSingleMessage(msg, authUser);
             processedMessages.push(processed);
+            await saveDecryptedMessage({
+              message: processed,
+              conversationId: userId,
+            });
           }
 
           set({ messages: processedMessages });
@@ -211,26 +264,37 @@ export const useChatStore = create(
         // 1. Always refresh conversations list so sidebar updates immediately
         get().getConversations();
 
-        // 2. If the message belongs to the active conversation, decrypt and append in real time
-        const isCurrentChat =
-          activeConversationId &&
-          (String(newMessage.senderId) === String(activeConversationId) ||
-            String(newMessage.receiverId) === String(activeConversationId));
+        // 2. Identify partner ID for local caching
+        const partnerId =
+          String(newMessage.senderId) === String(authUser?._id)
+            ? String(newMessage.receiverId)
+            : String(newMessage.senderId);
 
-        if (isCurrentChat) {
-          try {
-            const processedMessage = await decryptSingleMessage(newMessage, authUser);
+        try {
+          // 3. Decrypt incoming message and store in durable local encrypted cache
+          const processedMessage = await decryptSingleMessage(newMessage, authUser);
+          await saveDecryptedMessage({
+            message: processedMessage,
+            conversationId: partnerId,
+          });
+
+          // 4. If this is the active conversation, append to current messages list
+          const isCurrentChat =
+            activeConversationId &&
+            (String(newMessage.senderId) === String(activeConversationId) ||
+              String(newMessage.receiverId) === String(activeConversationId));
+
+          if (isCurrentChat) {
             set((state) => {
-              // Avoid duplicate messages if already present
               const alreadyExists = state.messages.some(
-                (m) => String(m._id) === String(processedMessage._id)
+                (m) => String(m._id || m.id) === String(processedMessage._id || processedMessage.id)
               );
               if (alreadyExists) return state;
               return { messages: [...state.messages, processedMessage] };
             });
-          } catch (err) {
-            console.error("Failed to decrypt real-time incoming message:", err);
           }
+        } catch (err) {
+          console.error("Failed to decrypt real-time incoming message:", err);
         }
       },
 
@@ -306,19 +370,56 @@ export const useChatStore = create(
             // 3. Persist updated session state
             await saveSessionState(session);
 
-            // 4. Transmit ciphertext envelope to backend (ZERO PLAINTEXT ON WIRE)
-            const res = await axiosInstance.post(`/messages/send/${selectedUser._id}`, {
-              encryptedEnvelope: envelope,
-            });
+            const disappearingTimer = get().disappearingTimer;
+            const expiresAt =
+              disappearingTimer > 0
+                ? new Date(Date.now() + disappearingTimer * 1000).toISOString()
+                : null;
+
+            let messageRecord;
+
+            // Check if client is offline or network fails
+            if (typeof navigator !== "undefined" && !navigator.onLine) {
+              const tempId = `offline_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+              await queueOfflineMessage({
+                id: tempId,
+                conversationId: selectedUser._id,
+                encryptedEnvelope: envelope,
+                expiresAt,
+              });
+              messageRecord = {
+                _id: tempId,
+                senderId: localIdentity._id || "me",
+                receiverId: selectedUser._id,
+                encryptedEnvelope: envelope,
+                status: "queued",
+                expiresAt,
+                createdAt: new Date().toISOString(),
+              };
+              toast("Offline: message queued in durable outbox", { icon: "📡" });
+            } else {
+              // 4. Transmit ciphertext envelope to backend (ZERO PLAINTEXT ON WIRE)
+              const res = await axiosInstance.post(`/messages/send/${selectedUser._id}`, {
+                encryptedEnvelope: envelope,
+                expiresAt,
+              });
+              messageRecord = res.data;
+            }
 
             // Store local optimistic decrypted representation for immediate sender rendering
             const localMessage = {
-              ...res.data,
+              ...messageRecord,
               text: messageText,
               decryptedText: messageText,
               isDecrypted: true,
               isEncrypted: true,
+              expiresAt,
             };
+
+            await saveDecryptedMessage({
+              message: localMessage,
+              conversationId: selectedUser._id,
+            });
 
             set((state) => ({
               messages: [...state.messages, localMessage],

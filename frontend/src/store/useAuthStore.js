@@ -78,10 +78,22 @@ export const useAuthStore = create((set, get) => ({
     get().disconnectSocket();
   },
 
-  connectSocket: (user) => {
+  connectSocket: async (user) => {
     if (!user || get().socket?.connected) return;
 
-    const socket = io(BASE_URL, { query: { userId: user._id } });
+    let token = null;
+    try {
+      if (typeof window !== "undefined" && window.Clerk?.session) {
+        token = await window.Clerk.session.getToken();
+      }
+    } catch {
+      // Non-fatal fallback for test/offline environments
+    }
+
+    const socket = io(BASE_URL, {
+      auth: { token, userId: user._id },
+      query: { userId: user._id },
+    });
 
     set({ socket });
 
@@ -94,6 +106,51 @@ export const useAuthStore = create((set, get) => ({
     socket.on("newMessage", async (newMessage) => {
       const chatStore = useChatStore.getState();
       chatStore.handleIncomingSocketMessage(newMessage);
+    });
+
+    // Ephemeral typing indicators
+    socket.on("typing:start", ({ senderId }) => {
+      useChatStore.getState().setTypingUser(senderId, true);
+    });
+    socket.on("typing:stop", ({ senderId }) => {
+      useChatStore.getState().setTypingUser(senderId, false);
+    });
+
+    // Message delivery and read receipts
+    socket.on("messageReceipt", (receipt) => {
+      useChatStore.getState().handleMessageReceipt(receipt);
+    });
+    socket.on("message:delivered", (receipt) => {
+      useChatStore.getState().handleMessageReceipt({ ...receipt, status: "delivered" });
+    });
+    socket.on("message:read", (receipt) => {
+      useChatStore.getState().handleMessageReceipt({ ...receipt, status: "read" });
+    });
+
+    // WebRTC call signaling
+    socket.on("call:incoming", ({ callerId, callType, offer }) => {
+      useChatStore.getState().setActiveCall({
+        partnerId: callerId,
+        callType,
+        offer,
+        isIncoming: true,
+        status: "ringing",
+      });
+      useChatStore.getState().setIsCallModalOpen(true);
+    });
+    socket.on("call:accepted", ({ answer }) => {
+      const call = useChatStore.getState().activeCall;
+      if (call) {
+        useChatStore.getState().setActiveCall({ ...call, answer, status: "connected" });
+      }
+    });
+    socket.on("call:rejected", () => {
+      useChatStore.getState().setActiveCall(null);
+      useChatStore.getState().setIsCallModalOpen(false);
+    });
+    socket.on("call:ended", () => {
+      useChatStore.getState().setActiveCall(null);
+      useChatStore.getState().setIsCallModalOpen(false);
     });
   },
 

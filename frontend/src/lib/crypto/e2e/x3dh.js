@@ -207,7 +207,8 @@ export async function deriveX3DHSecrets(dhConcatBytes) {
  */
 export async function computeSessionId(localConnectId, peerConnectId, ephemeralPublicKeyHex) {
   const subtle = getSubtleCrypto();
-  const input = `${localConnectId}->${peerConnectId}:${ephemeralPublicKeyHex}`;
+  const sortedParticipants = [localConnectId, peerConnectId].sort().join("<->");
+  const input = `${sortedParticipants}:${ephemeralPublicKeyHex}`;
   const hash = await subtle.digest("SHA-256", new TextEncoder().encode(input));
   return `session_${bytesToHex(new Uint8Array(hash)).substring(0, 32)}`;
 }

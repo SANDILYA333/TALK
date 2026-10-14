@@ -87,7 +87,8 @@ export async function saveSessionState(sessionRecord) {
     });
   }
 
-  memorySessionStorage.set(recordToSave.sessionId, recordToSave);
+  const memKey = `${recordToSave.peerConnectId}:${recordToSave.sessionId}`;
+  memorySessionStorage.set(memKey, recordToSave);
 }
 
 /**
@@ -111,7 +112,12 @@ export async function loadSessionState(sessionId) {
     });
   }
 
-  return memorySessionStorage.get(sessionId) || null;
+  for (const session of memorySessionStorage.values()) {
+    if (session.sessionId === sessionId) {
+      return session;
+    }
+  }
+  return null;
 }
 
 /**
@@ -178,7 +184,11 @@ export async function deleteSessionState(sessionId) {
     });
   }
 
-  memorySessionStorage.delete(sessionId);
+  for (const [key, session] of memorySessionStorage.entries()) {
+    if (session.sessionId === sessionId) {
+      memorySessionStorage.delete(key);
+    }
+  }
 }
 
 /**
